@@ -55,7 +55,7 @@ enzo new sub 12 "fix it"                  # a sub-issue of #12 with that title
 ```
 
 Every issue enzo opens is signed. The body it sends is what you wrote, a
-horizontal rule, then `Created by 🚘 enzo v0.1.0` in italics — so an issue that
+horizontal rule, then `Created by 🚘 enzo v0.2.0` in italics — so an issue that
 turns up with no obvious author says where it came from. An issue opened with
 no body at all is still signed; that is the case where the question gets asked.
 Pull requests `enzo start` opens get the same footer.
@@ -121,7 +121,7 @@ What it does, in order:
    cannot, git refuses and enzo stops there, leaving you where you were.
 3. **A commit, if the branch has nothing the base does not** — GitHub will not
    open a pull request between two identical branches, so such a branch gets an
-   empty `Created by 🚘 enzo v0.1.0` commit to hang one on. enzo **fetches the
+   empty `Created by 🚘 enzo v0.2.0` commit to hang one on. enzo **fetches the
    base first**: a stale `origin/main` makes a branch look ahead of a base that
    has already absorbed it, which is exactly the state GitHub rejects. A branch
    you have really worked on gets nothing. See
@@ -135,7 +135,7 @@ What it does, in order:
 
    ---
 
-   *Created by 🚘 enzo v0.1.0*
+   *Created by 🚘 enzo v0.2.0*
    ```
 
    That closing keyword is what keeps the PR and the issue linked, and what
@@ -224,7 +224,7 @@ open issues assigned to you in justin-efficient/enzo
   #1 implement enzo start
     #5 sub-issue created by enzo new
 
-🚘 enzo v0.1.0 · ↑/↓ move · enter select · ctrl+n sub-issue · esc cancel
+🚘 enzo v0.2.0 · ↑/↓ move · enter select · ctrl+n sub-issue · esc cancel
 ```
 
 Sub-issues are nested under their parent, two spaces per level:
@@ -260,12 +260,12 @@ A hardcoded copy of that string anywhere else fails the suite, because it would
 keep printing the old number after a bump.
 
 ```sh
-enzo --version     # 🚘 enzo v0.1.0
+enzo --version     # 🚘 enzo v0.2.0
 ```
 
-Cutting a release is a tag: `git tag -a v0.1.0 -m "0.1.0" && git push --tags`.
+Cutting a release is a tag: `git tag -a v0.2.0 -m "0.2.0" && git push --tags`.
 `make` passes `git describe` into the binary when the tree has a tag, so a
-build from three commits past `v0.1.0` reports `0.1.0-3-gabc123` rather than
+build from three commits past `v0.2.0` reports `0.2.0-3-gabc123` rather than
 claiming to be the release. An untagged tree keeps whatever is in source.
 
 Bump `Version` in `internal/version/version.go` in the same commit as the tag.
