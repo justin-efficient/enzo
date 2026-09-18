@@ -111,13 +111,22 @@ func destroy(ctx context.Context, env Env, root string, client ghclient.Client, 
 // confirmAbort prints what is about to be destroyed, including anything that
 // will not survive it, and waits for the phrase.
 func confirmAbort(env Env, root string, slug gitrepo.Slug, branch string, number int, pr *ghclient.PullRequest, base string) (bool, error) {
-	fmt.Fprintf(env.Stdout, "about to destroy, in %s:\n", slug)
-	fmt.Fprintf(env.Stdout, "  branch %s, here and on origin\n", branch)
+	// One row per thing in scope, each naming what will become of it. The
+	// fates are the point: "deleted forever" against "closed" against
+	// "remain open" is what tells you how far this goes, and the contrast
+	// between the first two carries the fact that GitHub offers no way to
+	// delete a pull request at any permission level. The issue earns its row
+	// by being the outcome the other two do not imply — GitHub *can* delete
+	// an issue, so its survival is worth stating rather than assuming. See
+	// docs/decisions/0005-abort-closes-it-cannot-delete.md.
+	fmt.Fprintf(env.Stdout, "aborting work in %s:\n", slug)
+	fmt.Fprintf(env.Stdout, "  %s : will be deleted forever\n", branch)
 	if pr != nil {
-		fmt.Fprintf(env.Stdout, "  PR #%d %s\n", pr.Number, pr.Title)
+		fmt.Fprintf(env.Stdout, "  PR #%d %s : will be closed\n", pr.Number, pr.Title)
 	} else {
 		fmt.Fprintln(env.Stdout, "  (no open pull request on it)")
 	}
+	fmt.Fprintf(env.Stdout, "  Issue #%d : will remain open, ready for a new pr\n", number)
 
 	// Anything that will not come back gets named before the prompt, not after.
 	if n, err := gitrepo.Unpushed(root, "origin", branch, base); err == nil && n > 0 {
@@ -127,7 +136,6 @@ func confirmAbort(env Env, root string, slug gitrepo.Slug, branch string, number
 		fmt.Fprintf(env.Stdout, "  ⚠ %s with uncommitted changes, which move to %s\n",
 			plural(len(dirty), "file"), base)
 	}
-	fmt.Fprintf(env.Stdout, "\n#%d stays open. A closed PR cannot be deleted, only closed.\n", number)
 	fmt.Fprintf(env.Stdout, "type %s to confirm: ", confirmPhrase)
 
 	line, err := readLine(env)

@@ -59,7 +59,7 @@ func TestAbortDestroysTheAttempt(t *testing.T) {
 	if !strings.Contains(e.Text, "#77") || !strings.Contains(e.Text, "#12") {
 		t.Errorf("logged %q, want both numbers", e.Text)
 	}
-	if !strings.Contains(h.out(), "#12 stays open") {
+	if !strings.Contains(h.out(), "Issue #12 : will remain open") {
 		t.Errorf("output should say the issue survives:\n%s", h.out())
 	}
 }
@@ -103,13 +103,17 @@ func TestAbortWarnsBeforeAsking(t *testing.T) {
 
 	out := h.out()
 	for _, want := range []string{
-		"about to destroy",
+		"aborting work in",
 		"justin-efficient/12-fix-the-thing",
 		"PR #77",
 		"1 commit not on origin",
 		// The count depends on what else the harness left lying around, so
 		// only the warning itself is asserted here; plural() has its own test.
 		"with uncommitted changes",
+		// Each row's fate, not just its name: "deleted forever" against
+		// "will be closed" is what tells the reader how far the abort goes.
+		"will be deleted forever",
+		"will be closed",
 		confirmPhrase,
 	} {
 		if !strings.Contains(out, want) {
