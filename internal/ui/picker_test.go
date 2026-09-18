@@ -7,6 +7,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/justin-efficient/enzo/internal/ghclient"
+	"github.com/justin-efficient/enzo/internal/version"
 )
 
 func sampleIssues(n int) []ghclient.Issue {
@@ -164,6 +165,31 @@ func TestViewShowsRepoAndIssues(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("view is missing %q:\n%s", want, out)
 		}
+	}
+}
+
+// The help line is signed, so the list says which enzo drew it. The string is
+// built in exactly one place; a second copy of it would drift at the next
+// version bump.
+func TestViewSignsTheHelpLine(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		build func() Picker
+	}{
+		{"the issue list", func() Picker { return NewPicker("o/r", sampleIssues(2), PlainStyles()) }},
+		{"the parent picker", func() Picker { return NewParentPicker("o/r", sampleIssues(2), PlainStyles()) }},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			out := tt.build().View().Content
+			want := version.Banner() + " · "
+			if !strings.Contains(out, want) {
+				t.Errorf("view should sign the help line with %q:\n%s", want, out)
+			}
+			// The signature goes before the keys, not instead of them.
+			if i, j := strings.Index(out, version.Banner()), strings.Index(out, "esc cancel"); i < 0 || j < i {
+				t.Errorf("the banner should come before the key hints:\n%s", out)
+			}
+		})
 	}
 }
 

@@ -97,7 +97,7 @@ func runNew(ctx context.Context, env Env, root string, client ghclient.Client, l
 
 	issue, err := client.CreateIssue(ctx, slug, ghclient.NewIssue{
 		Title:    draft.Title,
-		Body:     draft.Body,
+		Body:     signedBody(draft.Body),
 		Assignee: login,
 	})
 	if err != nil {

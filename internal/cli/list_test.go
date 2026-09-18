@@ -125,9 +125,9 @@ func TestListPickerOutcomes(t *testing.T) {
 			emptyOut: true,
 		},
 		{
-			name:    "grab reports the issue",
+			name:    "picking an issue starts it",
 			result:  ui.Result{Action: ui.ActionGrab, Issue: listIssues[0]},
-			wantOut: []string{"#12", "fix the thing", "https://github.com/justin-efficient/enzo/issues/12", "enzo grab 12"},
+			wantOut: []string{"#12", "fix the thing", "justin-efficient/12-fix-the-thing", "pull/300"},
 		},
 	}
 	for _, tt := range tests {
@@ -629,8 +629,9 @@ func TestListCancelExits(t *testing.T) {
 	}
 }
 
-// Picking an existing issue is a terminal action; it does not loop.
-func TestListGrabExits(t *testing.T) {
+// Picking an existing issue starts it, which is a terminal action: the picker
+// does not come back.
+func TestListGrabStarts(t *testing.T) {
 	h := newHarness(t, defaultRemote)
 	seedConfig(t, h, &config.Config{Token: "t"})
 	h.client.issues = listIssues
@@ -641,10 +642,18 @@ func TestListGrabExits(t *testing.T) {
 		t.Fatalf("List: %v", err)
 	}
 	if h.pickCalls != 1 {
-		t.Errorf("picker ran %d times, want 1 — grabbing should exit", h.pickCalls)
+		t.Errorf("picker ran %d times, want 1 — starting should exit", h.pickCalls)
 	}
-	if !strings.Contains(h.out(), "enzo grab 12") {
-		t.Errorf("output:\n%s", h.out())
+	// The row the user highlighted is the issue; re-reading it would be a
+	// wasted call against an issue we already have.
+	if h.client.createCalls != 0 {
+		t.Errorf("starting an existing issue should not create one")
+	}
+	if h.client.createPRCalls != 1 {
+		t.Fatalf("CreatePullRequest called %d times, want 1", h.client.createPRCalls)
+	}
+	if got := h.branch(t); got != "justin-efficient/12-fix-the-thing" {
+		t.Errorf("left on branch %q", got)
 	}
 }
 

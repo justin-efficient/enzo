@@ -1,7 +1,16 @@
 BIN     := enzo
-VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
-LDFLAGS := -s -w -X main.version=$(VERSION)
+PKG     := github.com/justin-efficient/enzo
 DIST    := dist
+
+# internal/version holds the released version and is the source of truth. A
+# build from a tagged tree overrides it, so a binary cut from v0.1.0-3-gabc123
+# says so instead of claiming to be the release. An untagged tree describes
+# nothing, leaves VERSION empty, and keeps what is in source.
+VERSION ?= $(shell git describe --tags --dirty 2>/dev/null | sed 's/^v//')
+LDFLAGS := -s -w
+ifneq ($(strip $(VERSION)),)
+LDFLAGS += -X $(PKG)/internal/version.Version=$(VERSION)
+endif
 
 .PHONY: all build test race cover vet fmt tidy clean dist
 

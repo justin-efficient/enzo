@@ -7,6 +7,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/justin-efficient/enzo/internal/ghclient"
+	"github.com/justin-efficient/enzo/internal/version"
 )
 
 // Action is what the user chose in the picker.
@@ -253,12 +254,16 @@ func (m Picker) View() tea.View {
 	return tea.NewView(b.String())
 }
 
-// helpLine lists the keys this picker responds to.
+// helpLine lists the keys this picker responds to, signed with the banner so
+// the list says which enzo drew it. version.Banner is the one place that
+// string is built; `enzo --version`, the usage text and the commit `enzo
+// start` writes all use the same call.
 func (m Picker) helpLine() string {
+	keys := "↑/↓ move · enter select · esc cancel"
 	if m.newSub {
-		return "↑/↓ move · enter select · ctrl+n sub-issue · esc cancel"
+		keys = "↑/↓ move · enter select · ctrl+n sub-issue · esc cancel"
 	}
-	return "↑/↓ move · enter select · esc cancel"
+	return version.Banner() + " · " + keys
 }
 
 // emptyMessage explains an empty list in the terms of whichever picker this is.

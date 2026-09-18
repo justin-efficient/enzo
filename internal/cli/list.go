@@ -83,9 +83,10 @@ func List(ctx context.Context, env Env, args []string) error {
 			}
 
 		case ui.ActionGrab:
-			fmt.Fprintf(env.Stdout, "#%d %s\n%s\n", res.Issue.Number, res.Issue.Title, res.Issue.URL)
-			fmt.Fprintf(env.Stdout, "run `enzo grab %d` to switch to its branch\n", res.Issue.Number)
-			return nil
+			// Picking an issue is what `enzo start` does, on the issue that
+			// is already in hand — no second lookup needed.
+			issue := res.Issue
+			return runStart(ctx, env, root, client, login, slug, startRequest{issue: &issue})
 
 		default:
 			return nil

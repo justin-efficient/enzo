@@ -15,17 +15,15 @@ import (
 	"github.com/justin-efficient/enzo/internal/eventlog"
 	"github.com/justin-efficient/enzo/internal/ghclient"
 	"github.com/justin-efficient/enzo/internal/ui"
+	"github.com/justin-efficient/enzo/internal/version"
 )
-
-// version is set at build time with -ldflags "-X main.version=...".
-var version = "dev"
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
 	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "version") {
-		fmt.Println("enzo", version)
+		fmt.Println(version.Banner())
 		return
 	}
 

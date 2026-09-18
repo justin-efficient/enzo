@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/justin-efficient/enzo/internal/version"
 )
 
 // These tests build the real binary and run it as a subprocess, so they cover
@@ -97,6 +99,11 @@ func testRepo(t *testing.T) string {
 		{"config", "user.name", "Test"},
 		{"commit", "-q", "--allow-empty", "-m", "init"},
 		{"remote", "add", "origin", "git@github.com:justin-efficient/enzo.git"},
+		// origin's URL has to look like GitHub, because that is what the slug
+		// is parsed from. insteadOf rewrites it to a bare repo beside it at
+		// transport time, so no fetch or push in a test can leave the machine.
+		{"config", "url." + filepath.Join(dir, "origin.git") + ".insteadOf",
+			"git@github.com:justin-efficient/enzo.git"},
 	} {
 		cmd := exec.Command("git", args...)
 		cmd.Dir = dir
@@ -104,18 +111,62 @@ func testRepo(t *testing.T) string {
 			t.Fatalf("git %v: %v\n%s", args, err, out)
 		}
 	}
+	bare := exec.Command("git", "init", "-q", "--bare", filepath.Join(dir, "origin.git"))
+	if out, err := bare.CombinedOutput(); err != nil {
+		t.Fatalf("git init --bare: %v\n%s", err, out)
+	}
+	push := exec.Command("git", "push", "-q", "origin", "main")
+	push.Dir = dir
+	if out, err := push.CombinedOutput(); err != nil {
+		t.Fatalf("seeding origin/main: %v\n%s", err, out)
+	}
 	return dir
 }
 
 // fakeGitHub serves the endpoints enzo uses, at the enterprise path prefix
 // go-github adds for a custom host.
-// created and linked record the write requests the fake server received.
-var created, linked []map[string]any
+// created, linked and pulls record the write requests the fake server received.
+var created, linked, pulls, closedPulls []map[string]any
+
+// openPR, when set, is what the pull request listing reports.
+var openPR map[string]any
 
 func fakeGitHub(t *testing.T, issues []map[string]any) *httptest.Server {
 	t.Helper()
-	created, linked = nil, nil
+	created, linked, pulls, closedPulls = nil, nil, nil, nil
+	openPR = nil
+	t.Cleanup(func() { openPR = nil })
 	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v3/repos/justin-efficient/enzo", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"name": "enzo", "default_branch": "main"})
+	})
+	mux.HandleFunc("/api/v3/repos/justin-efficient/enzo/pulls/77", func(w http.ResponseWriter, r *http.Request) {
+		var in map[string]any
+		json.NewDecoder(r.Body).Decode(&in)
+		closedPulls = append(closedPulls, in)
+		json.NewEncoder(w).Encode(map[string]any{"number": 77, "state": in["state"]})
+	})
+	mux.HandleFunc("/api/v3/repos/justin-efficient/enzo/pulls", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			var in map[string]any
+			json.NewDecoder(r.Body).Decode(&in)
+			pulls = append(pulls, in)
+			w.WriteHeader(http.StatusCreated)
+			json.NewEncoder(w).Encode(map[string]any{
+				"number": 300, "title": in["title"], "draft": in["draft"], "state": "open",
+				"html_url": "https://github.com/justin-efficient/enzo/pull/300",
+				"head":     map[string]any{"ref": in["head"]},
+				"base":     map[string]any{"ref": in["base"]},
+			})
+			return
+		}
+		if openPR != nil {
+			json.NewEncoder(w).Encode([]any{openPR})
+			return
+		}
+		// No pull request open on any branch yet.
+		json.NewEncoder(w).Encode([]any{})
+	})
 	mux.HandleFunc("/api/v3/user", func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") == "Bearer bad" {
 			w.WriteHeader(http.StatusUnauthorized)
@@ -154,21 +205,27 @@ func fakeGitHub(t *testing.T, issues []map[string]any) *httptest.Server {
 }
 
 func TestVersionFlag(t *testing.T) {
+	want := version.Banner()
 	for _, arg := range []string{"--version", "version"} {
 		stdout, _, code := run(t, t.TempDir(), nil, arg)
 		if code != 0 {
 			t.Errorf("%s exited %d, want 0", arg, code)
 		}
-		if !strings.HasPrefix(stdout, "enzo ") {
-			t.Errorf("%s printed %q, want a version line", arg, stdout)
+		if got := strings.TrimSpace(stdout); got != want {
+			t.Errorf("%s printed %q, want %q", arg, got, want)
 		}
 	}
 }
 
+// A tagged build names its tag. The Makefile sets this flag; if the symbol
+// path ever drifts from the package, ldflags fails silently and every release
+// binary claims to be whatever is in source.
 func TestVersionIsSetByLdflags(t *testing.T) {
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "enzo")
-	build := exec.Command("go", "build", "-ldflags", "-X main.version=1.2.3", "-o", bin, ".")
+	build := exec.Command("go", "build",
+		"-ldflags", "-X github.com/justin-efficient/enzo/internal/version.Version=1.2.3",
+		"-o", bin, ".")
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build: %v\n%s", err, out)
 	}
@@ -176,8 +233,27 @@ func TestVersionIsSetByLdflags(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.TrimSpace(string(out)); got != "enzo 1.2.3" {
-		t.Errorf("version = %q, want %q", got, "enzo 1.2.3")
+	if got, want := strings.TrimSpace(string(out)), "🚘 enzo v1.2.3"; got != want {
+		t.Errorf("version = %q, want %q", got, want)
+	}
+}
+
+// The Makefile is what ships releases, so the flag it builds has to be the one
+// that lands. A typo there is invisible until someone reads a version string.
+func TestMakefileOverridesTheVersion(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "enzo")
+	build := exec.Command("make", "build", "BIN="+bin, "VERSION=9.9.9")
+	build.Dir = "."
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("make build: %v\n%s", err, out)
+	}
+	out, err := exec.Command(bin, "--version").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := strings.TrimSpace(string(out)), "🚘 enzo v9.9.9"; got != want {
+		t.Errorf("version = %q, want %q", got, want)
 	}
 }
 
@@ -387,8 +463,9 @@ func TestNewCreatesAnIssue(t *testing.T) {
 	if created[0]["title"] != "from the CLI" {
 		t.Errorf("title = %v", created[0]["title"])
 	}
-	if created[0]["body"] != "with detail" {
-		t.Errorf("body = %v", created[0]["body"])
+	body, _ := created[0]["body"].(string)
+	if !strings.HasPrefix(body, "with detail\n") || !strings.Contains(body, version.Credit()) {
+		t.Errorf("body = %q, want what was written plus enzo's footer", body)
 	}
 	assignees, _ := created[0]["assignees"].([]any)
 	if len(assignees) != 1 || assignees[0] != "justin-efficient" {
@@ -466,14 +543,127 @@ func TestNewSubWithoutParentExitsNonZero(t *testing.T) {
 	}
 }
 
-func TestHelpMentionsNew(t *testing.T) {
+func TestHelpMentionsCommands(t *testing.T) {
 	stdout, _, code := run(t, t.TempDir(), nil, "help")
 	if code != 0 {
 		t.Fatalf("help exited %d", code)
 	}
-	if !strings.Contains(stdout, "enzo new") {
-		t.Errorf("help should list new:\n%s", stdout)
+	for _, want := range []string{"enzo new", "enzo start"} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("help should list %q:\n%s", want, stdout)
+		}
 	}
+}
+
+// End to end: `enzo start 12` branches, pushes and drafts a pull request.
+func TestStartBranchesAndDraftsAPR(t *testing.T) {
+	srv := fakeGitHub(t, nil)
+	dir := testRepo(t)
+	configure(t, dir, srv.URL)
+	logPath, env := logFileFor(t)
+
+	stdout, stderr, code := run(t, dir, env, "start", "12")
+	if code != 0 {
+		t.Fatalf("start exited %d\nstdout:%s\nstderr:%s", code, stdout, stderr)
+	}
+
+	const branch = "justin-efficient/12-the-parent"
+	if got := gitIn(t, dir, "rev-parse", "--abbrev-ref", "HEAD"); got != branch {
+		t.Errorf("on branch %q, want %q", got, branch)
+	}
+	// The branch reached origin, or GitHub would have nothing to open a PR on.
+	if got := gitIn(t, filepath.Join(dir, "origin.git"), "rev-parse", "--abbrev-ref", branch); got != branch {
+		t.Errorf("origin has %q, want the pushed branch", got)
+	}
+
+	if len(pulls) != 1 {
+		t.Fatalf("opened %d pull requests, want 1: %v", len(pulls), pulls)
+	}
+	pr := pulls[0]
+	if pr["draft"] != true {
+		t.Errorf("draft = %v, want true", pr["draft"])
+	}
+	if pr["head"] != branch || pr["base"] != "main" {
+		t.Errorf("head/base = %v/%v", pr["head"], pr["base"])
+	}
+	prBody, _ := pr["body"].(string)
+	if !strings.Contains(prBody, "Closes #12") {
+		t.Errorf("PR body = %q, want it to close the issue", prBody)
+	}
+	if !strings.Contains(prBody, version.Credit()) {
+		t.Errorf("PR body = %q, want enzo's footer", prBody)
+	}
+	// #12 already existed, so start had no reason to open an issue.
+	if len(created) != 0 {
+		t.Errorf("nothing should have been created: %v", created)
+	}
+	if !strings.Contains(stdout, "pull/300") {
+		t.Errorf("stdout should name the PR:\n%s", stdout)
+	}
+
+	lines := readLog(t, logPath)
+	if len(lines) != 1 || !strings.Contains(lines[0], "drafted") {
+		t.Errorf("log = %v, want one drafted entry", lines)
+	}
+}
+
+// End to end: a title with no number opens the issue first.
+func TestStartOpensAnIssueFromATitle(t *testing.T) {
+	srv := fakeGitHub(t, nil)
+	dir := testRepo(t)
+	configure(t, dir, srv.URL)
+
+	_, stderr, code := run(t, dir, nil, "start", "add a thing")
+	if code != 0 {
+		t.Fatalf("start exited %d: %s", code, stderr)
+	}
+
+	if len(created) != 1 || created[0]["title"] != "add a thing" {
+		t.Fatalf("created = %v, want the issue", created)
+	}
+	// The fake opens #57, so that is what the branch and the PR are for.
+	if got := gitIn(t, dir, "rev-parse", "--abbrev-ref", "HEAD"); got != "justin-efficient/57-add-a-thing" {
+		t.Errorf("on branch %q", got)
+	}
+	if len(pulls) != 1 {
+		t.Fatalf("opened %d pull requests, want 1", len(pulls))
+	}
+	prBody, _ := pulls[0]["body"].(string)
+	if !strings.Contains(prBody, "Closes #57") || !strings.Contains(prBody, version.Credit()) {
+		t.Errorf("PR body = %q, want it to close #57 and carry enzo's footer", prBody)
+	}
+}
+
+func TestStartWithNothingToGoOnExitsNonZero(t *testing.T) {
+	srv := fakeGitHub(t, nil)
+	dir := testRepo(t)
+	configure(t, dir, srv.URL)
+
+	_, stderr, code := run(t, dir, nil, "start")
+	if code == 0 {
+		t.Error("start with no issue and no title should exit non-zero")
+	}
+	if !strings.Contains(stderr, "issue number") {
+		t.Errorf("stderr should say what is missing:\n%s", stderr)
+	}
+	if len(created) != 0 || len(pulls) != 0 {
+		t.Error("a rejected command should not reach GitHub")
+	}
+	if got := gitIn(t, dir, "rev-parse", "--abbrev-ref", "HEAD"); got != "main" {
+		t.Errorf("left on branch %q, want main", got)
+	}
+}
+
+// gitIn runs git in dir and returns its trimmed output.
+func gitIn(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v in %s: %v\n%s", args, dir, err, out)
+	}
+	return strings.TrimSpace(string(out))
 }
 
 // End to end: sub-issues come back nested under their parent.
@@ -524,9 +714,9 @@ func TestNewPositionalTitleEndToEnd(t *testing.T) {
 	if created[0]["title"] != "my new issue" {
 		t.Errorf("title = %v", created[0]["title"])
 	}
-	// No body was given, so none should be sent.
-	if _, ok := created[0]["body"]; ok {
-		t.Errorf("body should be omitted, got %v", created[0]["body"])
+	// No body was given, so the footer is the whole of it.
+	if body, _ := created[0]["body"].(string); body != "*"+version.Credit()+"*" {
+		t.Errorf("body = %q, want the footer alone", body)
 	}
 }
 
@@ -637,4 +827,127 @@ func TestRunsAreSandboxedFromTheRealLog(t *testing.T) {
 	if len(after) != len(before)+1 {
 		t.Errorf("a run with no ENZO_LOG went somewhere else: sandbox had %d lines, now %d", len(before), len(after))
 	}
+}
+
+// The banner is built in exactly one place. A hardcoded copy somewhere else
+// would keep rendering the old number after the next version bump, and nothing
+// would fail — so this fails instead.
+func TestBannerIsNotHardcodedAnywhere(t *testing.T) {
+	const literal = "🚘 enzo v"
+	err := filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
+		switch {
+		case err != nil:
+			return err
+		case info.IsDir() && (info.Name() == ".git" || info.Name() == "dist"):
+			return filepath.SkipDir
+		case info.IsDir() || !strings.HasSuffix(path, ".go"):
+			return nil
+		// version is where the banner is built, and tests are allowed to say
+		// what they expect to see.
+		case strings.HasPrefix(path, filepath.Join("internal", "version")):
+			return nil
+		case strings.HasSuffix(path, "_test.go"):
+			return nil
+		}
+
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if strings.Contains(string(b), literal) {
+			t.Errorf("%s hardcodes %q; call version.Banner() instead", path, literal)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walking the source: %v", err)
+	}
+}
+
+// End to end: abort closes the PR and deletes the branch, here and on origin,
+// and only after the phrase is typed.
+func TestAbortEndToEnd(t *testing.T) {
+	srv := fakeGitHub(t, nil)
+	dir := testRepo(t)
+	configure(t, dir, srv.URL)
+	logPath, env := logFileFor(t)
+
+	const branch = "justin-efficient/12-fix-the-thing"
+	gitIn(t, dir, "switch", "-q", "-c", branch)
+	gitIn(t, dir, "commit", "-q", "--allow-empty", "-m", "work")
+	gitIn(t, dir, "push", "-q", "-u", "origin", branch)
+	openPR = map[string]any{
+		"number": 77, "title": "fix the thing", "state": "open", "draft": true,
+		"html_url": "https://github.com/justin-efficient/enzo/pull/77",
+		"head":     map[string]any{"ref": branch},
+		"base":     map[string]any{"ref": "main"},
+	}
+
+	stdout, stderr, code := runStdin(t, dir, env, "nukefromorbit\n", "abort")
+	if code != 0 {
+		t.Fatalf("abort exited %d\nstdout:%s\nstderr:%s", code, stdout, stderr)
+	}
+
+	if len(closedPulls) != 1 || closedPulls[0]["state"] != "closed" {
+		t.Errorf("closed = %v, want one PR closed", closedPulls)
+	}
+	if got := gitIn(t, dir, "rev-parse", "--abbrev-ref", "HEAD"); got != "main" {
+		t.Errorf("left on %q, want main", got)
+	}
+	if out := gitIn(t, dir, "branch", "--format=%(refname:short)"); strings.Contains(out, "fix-the-thing") {
+		t.Errorf("local branch survived:\n%s", out)
+	}
+	bare := filepath.Join(dir, "origin.git")
+	if out := gitIn(t, bare, "for-each-ref", "--format=%(refname:short)", "refs/heads"); strings.Contains(out, "fix-the-thing") {
+		t.Errorf("origin still has the branch:\n%s", out)
+	}
+	if lines := readLog(t, logPath); len(lines) != 1 || !strings.Contains(lines[0], "aborted") {
+		t.Errorf("log = %v, want one aborted entry", lines)
+	}
+}
+
+// Without the phrase, abort is a no-op and exits quietly.
+func TestAbortWithoutThePhraseChangesNothing(t *testing.T) {
+	srv := fakeGitHub(t, nil)
+	dir := testRepo(t)
+	configure(t, dir, srv.URL)
+
+	const branch = "justin-efficient/12-fix-the-thing"
+	gitIn(t, dir, "switch", "-q", "-c", branch)
+	gitIn(t, dir, "commit", "-q", "--allow-empty", "-m", "work")
+	gitIn(t, dir, "push", "-q", "-u", "origin", branch)
+
+	stdout, _, code := runStdin(t, dir, nil, "no thanks\n", "abort")
+	if code != 0 {
+		t.Errorf("backing out should exit 0, got %d", code)
+	}
+	if !strings.Contains(stdout, "nothing was touched") {
+		t.Errorf("stdout should say nothing happened:\n%s", stdout)
+	}
+	if len(closedPulls) != 0 {
+		t.Errorf("closed %v without the phrase", closedPulls)
+	}
+	if got := gitIn(t, dir, "rev-parse", "--abbrev-ref", "HEAD"); got != branch {
+		t.Errorf("left on %q, want the branch untouched", got)
+	}
+}
+
+// runStdin is run with something on the command's stdin.
+func runStdin(t *testing.T, dir string, env []string, stdin string, args ...string) (string, string, int) {
+	t.Helper()
+	cmd := exec.Command(enzoBin, args...)
+	cmd.Dir = dir
+	cmd.Env = append(append(os.Environ(), "ENZO_LOG="+sandboxLog), env...)
+	cmd.Stdin = strings.NewReader(stdin)
+	var stdout, stderr strings.Builder
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	err := cmd.Run()
+
+	code := 0
+	if exitErr, ok := err.(*exec.ExitError); ok {
+		code = exitErr.ExitCode()
+	} else if err != nil {
+		t.Fatalf("running enzo %v: %v", args, err)
+	}
+	return stdout.String(), stderr.String(), code
 }

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/justin-efficient/enzo/internal/config"
+	"github.com/justin-efficient/enzo/internal/version"
 )
 
 func TestRunDefaultsToList(t *testing.T) {
@@ -72,10 +73,20 @@ func TestRunUnknownCommand(t *testing.T) {
 	}
 }
 
+// The usage text leads with the banner, so `enzo help` says which enzo this is.
+func TestUsageLeadsWithTheVersion(t *testing.T) {
+	if !strings.HasPrefix(Usage(), version.Banner()) {
+		t.Errorf("usage should start with %q:\n%s", version.Banner(), Usage())
+	}
+	if !strings.Contains(Usage(), version.Version) {
+		t.Errorf("usage should name the version %q", version.Version)
+	}
+}
+
 // Every command named in the usage text must actually dispatch.
 func TestUsageMatchesDispatch(t *testing.T) {
-	for _, cmd := range []string{"setup", "list", "new", "help"} {
-		if !strings.Contains(Usage, "enzo "+cmd) {
+	for _, cmd := range []string{"setup", "list", "new", "start", "abort", "help"} {
+		if !strings.Contains(Usage(), "enzo "+cmd) {
 			t.Errorf("usage text does not mention %q", cmd)
 		}
 		h := newHarness(t, defaultRemote)
@@ -112,8 +123,57 @@ func TestRunDispatchesNewSub(t *testing.T) {
 
 func TestUsageMentionsNew(t *testing.T) {
 	for _, want := range []string{"enzo new", "sub"} {
-		if !strings.Contains(Usage, want) {
-			t.Errorf("usage should mention %q:\n%s", want, Usage)
+		if !strings.Contains(Usage(), want) {
+			t.Errorf("usage should mention %q:\n%s", want, Usage())
 		}
+	}
+}
+
+// The footer is appended, never substituted: what was written has to survive
+// intact, and the signature has to be visibly separate from it. The same
+// function signs issue bodies and pull request bodies.
+func TestSignedBody(t *testing.T) {
+	tests := []struct {
+		name    string
+		written string
+		want    string
+	}{
+		{
+			"an empty body is the footer alone",
+			"",
+			"*" + version.Credit() + "*",
+		},
+		{
+			"a body keeps what was written, under a rule",
+			"the parser crashes on empty input",
+			"the parser crashes on empty input\n\n---\n\n*" + version.Credit() + "*",
+		},
+		{
+			"surrounding whitespace is trimmed before signing",
+			"  \n detail \n\n ",
+			"detail\n\n---\n\n*" + version.Credit() + "*",
+		},
+		{
+			"a whitespace-only body is an empty one",
+			"   \n\t ",
+			"*" + version.Credit() + "*",
+		},
+		{
+			"a pull request body is signed the same way",
+			"Closes #12",
+			"Closes #12\n\n---\n\n*" + version.Credit() + "*",
+		},
+		{
+			"markdown in the body is left alone",
+			"### steps\n\n1. run it\n2. watch it fall over",
+			"### steps\n\n1. run it\n2. watch it fall over\n\n---\n\n*" + version.Credit() + "*",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := signedBody(tt.written); got != tt.want {
+				t.Errorf("signedBody(%q) =\n%q\nwant\n%q", tt.written, got, tt.want)
+			}
+		})
 	}
 }

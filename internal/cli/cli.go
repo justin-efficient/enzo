@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/justin-efficient/enzo/internal/ghclient"
 	"github.com/justin-efficient/enzo/internal/gitrepo"
 	"github.com/justin-efficient/enzo/internal/ui"
+	"github.com/justin-efficient/enzo/internal/version"
 )
 
 // ErrCanceled means the user backed out; callers should exit quietly.
@@ -81,8 +83,24 @@ func record(env Env, root, repo, action, text, url string) {
 	}
 }
 
-// Usage is the help text printed for `enzo help` and unknown commands.
-const Usage = `🚘 enzo — issue lifecycle for GitHub
+// signedBody signs what enzo is about to post — an issue body, or a pull
+// request body — with the same footer. The signature sits under a horizontal
+// rule so it reads as a footer rather than as part of what was written, and a
+// body that is otherwise empty is still signed: that is the case where "where
+// did this come from?" gets asked.
+func signedBody(body string) string {
+	footer := "*" + version.Credit() + "*"
+	if body = strings.TrimSpace(body); body == "" {
+		return footer
+	}
+	return body + "\n\n---\n\n" + footer
+}
+
+// Usage is the help text printed for `enzo help` and unknown commands. It is
+// built rather than declared so the banner carries the running version.
+func Usage() string { return version.Banner() + usageBody }
+
+const usageBody = ` — issue lifecycle for GitHub
 
 usage:
   enzo setup            store the token enzo uses for this repo
@@ -90,6 +108,10 @@ usage:
   enzo new ["title"]    open an issue assigned to you
   enzo new sub [n] ["title"]
                         open it as a sub-issue of #n, or pick a parent
+  enzo start [n] ["title"]
+                        branch and draft a PR for #n, opening it first
+                        if you gave a title instead of a number
+  enzo abort            close the PR and delete the branch you are on
   enzo help             show this message
 `
 
@@ -108,11 +130,15 @@ func Run(ctx context.Context, env Env, args []string) error {
 		return List(ctx, env, args)
 	case "new":
 		return New(ctx, env, args)
+	case "start":
+		return Start(ctx, env, args)
+	case "abort":
+		return Abort(ctx, env, args)
 	case "help", "-h", "--help":
-		fmt.Fprint(env.Stdout, Usage)
+		fmt.Fprint(env.Stdout, Usage())
 		return nil
 	default:
-		fmt.Fprint(env.Stderr, Usage)
+		fmt.Fprint(env.Stderr, Usage())
 		return fmt.Errorf("unknown command %q", cmd)
 	}
 }

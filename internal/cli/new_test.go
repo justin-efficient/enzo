@@ -66,9 +66,7 @@ func TestNewPassesBody(t *testing.T) {
 	if err := New(context.Background(), h.env, []string{"--title", "t", "--body", "the details"}); err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	if got := h.client.gotNewIssue.Body; got != "the details" {
-		t.Errorf("body = %q", got)
-	}
+	requireSignedBody(t, h.client.gotNewIssue.Body, "the details")
 }
 
 func TestNewPromptsWhenInteractive(t *testing.T) {
@@ -82,7 +80,8 @@ func TestNewPromptsWhenInteractive(t *testing.T) {
 	if h.draftCalls != 1 {
 		t.Errorf("form shown %d times, want 1", h.draftCalls)
 	}
-	if h.client.gotNewIssue.Title != "typed title" || h.client.gotNewIssue.Body != "typed body" {
+	requireSignedBody(t, h.client.gotNewIssue.Body, "typed body")
+	if h.client.gotNewIssue.Title != "typed title" {
 		t.Errorf("created %+v, want the drafted title and body", h.client.gotNewIssue)
 	}
 	if h.draftedParent != nil {
@@ -358,17 +357,15 @@ func TestNewPositionalTitle(t *testing.T) {
 	}
 }
 
-// A title alone is enough; the body stays empty.
-func TestNewPositionalTitleLeavesBodyEmpty(t *testing.T) {
+// A title alone is enough; the body is enzo's footer and nothing else.
+func TestNewPositionalTitleLeavesBodyToTheFooter(t *testing.T) {
 	h := newReady(t)
 	h.env.Interactive = true
 
 	if err := New(context.Background(), h.env, []string{"my new issue"}); err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	if got := h.client.gotNewIssue.Body; got != "" {
-		t.Errorf("body = %q, want empty", got)
-	}
+	requireSignedBody(t, h.client.gotNewIssue.Body, "")
 	if h.draftCalls != 0 {
 		t.Error("enzo should not prompt when the title is already known")
 	}
@@ -382,7 +379,8 @@ func TestNewPositionalTitleWithBodyFlag(t *testing.T) {
 	if err := New(context.Background(), h.env, []string{"my new issue", "--body", "detail"}); err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	if h.client.gotNewIssue.Title != "my new issue" || h.client.gotNewIssue.Body != "detail" {
+	requireSignedBody(t, h.client.gotNewIssue.Body, "detail")
+	if h.client.gotNewIssue.Title != "my new issue" {
 		t.Errorf("created %+v", h.client.gotNewIssue)
 	}
 }
@@ -536,9 +534,7 @@ func TestNewTitleAndFlagOrdering(t *testing.T) {
 			if got := h.client.gotNewIssue.Title; got != "my new issue" {
 				t.Errorf("title = %q", got)
 			}
-			if got := h.client.gotNewIssue.Body; got != "detail" {
-				t.Errorf("body = %q", got)
-			}
+			requireSignedBody(t, h.client.gotNewIssue.Body, "detail")
 		})
 	}
 }

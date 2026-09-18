@@ -58,6 +58,15 @@ type Client interface {
 	CreateIssue(ctx context.Context, slug gitrepo.Slug, in NewIssue) (Issue, error)
 	// LinkSubIssue makes child a sub-issue of parent.
 	LinkSubIssue(ctx context.Context, slug gitrepo.Slug, parentNumber int, childID int64) error
+	// DefaultBranch returns the branch pull requests should target.
+	DefaultBranch(ctx context.Context, slug gitrepo.Slug) (string, error)
+	// PullRequestForBranch returns the open pull request whose head is
+	// branch, or nil when there is none.
+	PullRequestForBranch(ctx context.Context, slug gitrepo.Slug, branch string) (*PullRequest, error)
+	// CreatePullRequest opens a pull request and returns it.
+	CreatePullRequest(ctx context.Context, slug gitrepo.Slug, in NewPullRequest) (PullRequest, error)
+	// ClosePullRequest closes a pull request without merging it.
+	ClosePullRequest(ctx context.Context, slug gitrepo.Slug, number int) error
 }
 
 // API is the go-github backed implementation of Client.
