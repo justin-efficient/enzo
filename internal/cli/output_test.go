@@ -29,7 +29,7 @@ func TestRowsAlignNouns(t *testing.T) {
 		if got := len(line) - len(nouns[i]); got != want {
 			t.Errorf("noun starts at column %d, want %d: %q", got, want, line)
 		}
-		if !strings.HasPrefix(line, "  ") {
+		if !strings.HasPrefix(line, indent) {
 			t.Errorf("row is not indented: %q", line)
 		}
 	}
@@ -39,7 +39,7 @@ func TestRowsAlignNouns(t *testing.T) {
 func TestRowsSingle(t *testing.T) {
 	var b bytes.Buffer
 	rows(&b, row{"url", "https://example.invalid/1"})
-	if got, want := b.String(), "  url: https://example.invalid/1\n"; got != want {
+	if got, want := b.String(), indent+"url: https://example.invalid/1\n"; got != want {
 		t.Errorf("rows = %q, want %q", got, want)
 	}
 }

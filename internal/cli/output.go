@@ -25,6 +25,12 @@ func headline(w io.Writer, emoji, format string, a ...any) {
 	fmt.Fprintf(w, "%s %s\n", emoji, fmt.Sprintf(format, a...))
 }
 
+// indent is the left margin for everything under a headline. Three columns,
+// which is what the headline's own text is inset by: an emoji is two columns
+// wide, plus the space after it. Two would very nearly line up, which reads
+// worse than either lining up or plainly not.
+const indent = "   "
+
 // row is one line under a headline: what was done, and what it was done to.
 type row struct{ verb, noun string }
 
@@ -47,7 +53,7 @@ func rows(w io.Writer, rr ...row) {
 // succeeds — a report of what actually happened, ending wherever it ended —
 // and so cannot measure the block before it starts printing it.
 func printRow(w io.Writer, width int, verb, noun string) {
-	fmt.Fprintf(w, "  %-*s %s\n", width+1, verb+":", noun)
+	fmt.Fprintf(w, "%s%-*s %s\n", indent, width+1, verb+":", noun)
 }
 
 // abortWidth is the widest verb `enzo abort` reports with, so its rows line up

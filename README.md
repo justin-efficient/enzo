@@ -161,19 +161,19 @@ arguments — what it destroys is where you are.
 ```
 $ enzo abort
 ❌ aborting work in justin-efficient/enzo:
-  justin-efficient/12-fix-the-thing : will be deleted forever
-  PR #77 fix the parser crash : will be closed
-  Issue #12 : will remain open, ready for a new pr
-  ⚠ 2 commits not on origin — deleting the branch destroys them
-  ⚠ 3 files with uncommitted changes, which move to main
+   justin-efficient/12-fix-the-thing : will be deleted forever
+   PR #77 fix the parser crash : will be closed
+   Issue #12 : will remain open, ready for a new pr
+   ⚠ 2 commits not on origin — deleting the branch destroys them
+   ⚠ 3 files with uncommitted changes, which move to main
 
 type nukefromorbit to confirm: nukefromorbit
 
-  switched to: main
-  closed:      PR #77
-  deleted:     origin/justin-efficient/12-fix-the-thing
-  deleted:     justin-efficient/12-fix-the-thing
-  left:        #12 open
+   switched to: main
+   closed:      PR #77
+   deleted:     origin/justin-efficient/12-fix-the-thing
+   deleted:     justin-efficient/12-fix-the-thing
+   left:        #12 open
 ```
 
 **The issue is left open.** Aborting an attempt is not abandoning the work —
@@ -231,10 +231,10 @@ in a column.
 ```
 $ enzo start "fix the parser crash"
 ✨ created a new issue #12, "fix the parser crash"
-  url: https://github.com/justin-efficient/enzo/issues/12
+   url: https://github.com/justin-efficient/enzo/issues/12
 🟢 starting work on Issue #12 "fix the parser crash"
-  created: justin-efficient/12-fix-the-parser-crash
-  drafted: PR #13 https://github.com/justin-efficient/enzo/pull/13
+   created: justin-efficient/12-fix-the-parser-crash
+   drafted: PR #13 https://github.com/justin-efficient/enzo/pull/13
 ```
 
 The verbs are what enzo *did*, not what the command is for. Starting an issue
@@ -243,8 +243,8 @@ that is already started says so rather than claiming to have redone the work:
 ```
 $ enzo start 12
 🟢 starting work on Issue #12 "fix the parser crash"
-  switched to: justin-efficient/12-fix-the-parser-crash
-  found:       PR #13 https://github.com/justin-efficient/enzo/pull/13
+   switched to: justin-efficient/12-fix-the-parser-crash
+   found:       PR #13 https://github.com/justin-efficient/enzo/pull/13
 ```
 
 `enzo abort` inverts the rows, because it is asking rather than reporting:

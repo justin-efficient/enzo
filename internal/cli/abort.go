@@ -120,20 +120,20 @@ func confirmAbort(env Env, root string, slug gitrepo.Slug, branch string, number
 	// an issue, so its survival is worth stating rather than assuming. See
 	// docs/decisions/0005-abort-closes-it-cannot-delete.md.
 	headline(env.Stdout, emojiAbort, "aborting work in %s:", slug)
-	fmt.Fprintf(env.Stdout, "  %s : will be deleted forever\n", branch)
+	fmt.Fprintf(env.Stdout, indent+"%s : will be deleted forever\n", branch)
 	if pr != nil {
-		fmt.Fprintf(env.Stdout, "  PR #%d %s : will be closed\n", pr.Number, pr.Title)
+		fmt.Fprintf(env.Stdout, indent+"PR #%d %s : will be closed\n", pr.Number, pr.Title)
 	} else {
-		fmt.Fprintln(env.Stdout, "  (no open pull request on it)")
+		fmt.Fprintln(env.Stdout, indent+"(no open pull request on it)")
 	}
-	fmt.Fprintf(env.Stdout, "  Issue #%d : will remain open, ready for a new pr\n", number)
+	fmt.Fprintf(env.Stdout, indent+"Issue #%d : will remain open, ready for a new pr\n", number)
 
 	// Anything that will not come back gets named before the prompt, not after.
 	if n, err := gitrepo.Unpushed(root, "origin", branch, base); err == nil && n > 0 {
-		fmt.Fprintf(env.Stdout, "  ⚠ %s not on origin — deleting the branch destroys them\n", plural(n, "commit"))
+		fmt.Fprintf(env.Stdout, indent+"⚠ %s not on origin — deleting the branch destroys them\n", plural(n, "commit"))
 	}
 	if dirty, err := gitrepo.DirtyFiles(root); err == nil && len(dirty) > 0 {
-		fmt.Fprintf(env.Stdout, "  ⚠ %s with uncommitted changes, which move to %s\n",
+		fmt.Fprintf(env.Stdout, indent+"⚠ %s with uncommitted changes, which move to %s\n",
 			plural(len(dirty), "file"), base)
 	}
 	fmt.Fprintln(env.Stdout)
