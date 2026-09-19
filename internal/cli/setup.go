@@ -68,16 +68,24 @@ func Setup(ctx context.Context, env Env, args []string) error {
 		return err
 	}
 
-	fmt.Fprintf(env.Stdout, "authenticated as %s\n", login)
-	fmt.Fprintf(env.Stdout, "wrote %s\n", config.Path(root))
-
+	// The .gitignore is settled before anything is printed, so the report is
+	// one block describing a finished state rather than a running commentary.
+	// The error below still says the token was saved, which is the part that
+	// would otherwise be in doubt.
 	added, err := config.EnsureIgnored(root)
 	if err != nil {
 		return fmt.Errorf("saved the token but could not update .gitignore: %w", err)
 	}
-	if added {
-		fmt.Fprintf(env.Stdout, "added %s to .gitignore\n", config.FileName)
+
+	headline(env.Stdout, emojiSetup, "set up enzo for %s", slug)
+	rr := []row{
+		{"authenticated", login},
+		{"wrote", config.Path(root)},
 	}
+	if added {
+		rr = append(rr, row{"added", config.FileName + " to .gitignore"})
+	}
+	rows(env.Stdout, rr...)
 	return nil
 }
 

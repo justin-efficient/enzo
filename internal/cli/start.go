@@ -103,13 +103,14 @@ func runStart(ctx context.Context, env Env, root string, client ghclient.Client,
 	// still on the branch you were on.
 	baseRev, baseErr := resolveBase(root, base)
 
-	if err := checkout(root, branch, baseRev); err != nil {
+	createdBranch, err := checkout(root, branch, baseRev)
+	if err != nil {
 		return err
 	}
 
 	if existing != nil {
 		// Already set up. Say where things stand rather than doing it twice.
-		report(env, *issue, branch, *existing, false)
+		report(env, *issue, branch, *existing, createdBranch, false)
 		return nil
 	}
 
@@ -144,7 +145,7 @@ func runStart(ctx context.Context, env Env, root string, client ghclient.Client,
 	record(env, root, slug.String(), "drafted",
 		fmt.Sprintf("PR #%d for #%d on %s", pr.Number, issue.Number, branch), pr.URL)
 
-	report(env, *issue, branch, pr, true)
+	report(env, *issue, branch, pr, createdBranch, true)
 	return nil
 }
 
@@ -161,7 +162,14 @@ func startIssue(ctx context.Context, env Env, root string, client ghclient.Clien
 		}
 		return &issue, nil
 	}
-	return runNew(ctx, env, root, client, login, slug, newRequest{title: req.title, body: req.body})
+	issue, err := runNew(ctx, env, root, client, login, slug, newRequest{title: req.title, body: req.body})
+	if err != nil {
+		return nil, err
+	}
+	// `enzo start "a title"` opened this one; say what it made before it says
+	// what it did with it.
+	reportNew(env, issue)
+	return issue, nil
 }
 
 // checkout puts the worktree on branch, creating it at baseRev if it is not
@@ -175,23 +183,23 @@ func startIssue(ctx context.Context, env Env, root string, client ghclient.Clien
 // Uncommitted work comes along, the same as a hand-typed `git switch`. When it
 // cannot be carried, git refuses and enzo stops there, still on the branch you
 // started on.
-func checkout(root, branch, baseRev string) error {
+func checkout(root, branch, baseRev string) (created bool, err error) {
 	current, err := gitrepo.CurrentBranch(root)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if current == branch {
-		return nil
+		return false, nil
 	}
 	if gitrepo.BranchExists(root, branch) {
-		return gitrepo.Switch(root, branch)
+		return false, gitrepo.Switch(root, branch)
 	}
 	if baseRev == "" {
 		// Nothing to start from; `git switch -c` off HEAD is still better
 		// than refusing to start work at all.
-		return gitrepo.CreateBranch(root, branch, "")
+		return true, gitrepo.CreateBranch(root, branch, "")
 	}
-	return gitrepo.CreateBranch(root, branch, baseRev)
+	return true, gitrepo.CreateBranch(root, branch, baseRev)
 }
 
 // needsCommit reports whether the branch holds nothing GitHub could open a
@@ -234,14 +242,23 @@ func resolveBase(root, base string) (string, error) {
 }
 
 // report prints where the issue, branch and pull request ended up.
-func report(env Env, issue ghclient.Issue, branch string, pr ghclient.PullRequest, opened bool) {
-	verb := "already open:"
-	if opened {
-		verb = "drafted"
+//
+// The verbs are what enzo actually did, not what the command is for: starting
+// an issue twice reports that it switched and found, so a second `enzo start`
+// does not read like it just redid the work of the first.
+func report(env Env, issue ghclient.Issue, branch string, pr ghclient.PullRequest, createdBranch, openedPR bool) {
+	branchVerb, prVerb := "switched to", "found"
+	if createdBranch {
+		branchVerb = "created"
 	}
-	fmt.Fprintf(env.Stdout, "#%d %s\n", issue.Number, issue.Title)
-	fmt.Fprintf(env.Stdout, "  branch %s\n", branch)
-	fmt.Fprintf(env.Stdout, "  %s PR #%d %s\n", verb, pr.Number, pr.URL)
+	if openedPR {
+		prVerb = "drafted"
+	}
+	headline(env.Stdout, emojiStart, "starting work on Issue #%d %q", issue.Number, issue.Title)
+	rows(env.Stdout,
+		row{branchVerb, branch},
+		row{prVerb, fmt.Sprintf("PR #%d %s", pr.Number, pr.URL)},
+	)
 }
 
 // parseStartArgs pulls a leading issue number off args, leaving the title and

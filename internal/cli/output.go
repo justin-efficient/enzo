@@ -1,0 +1,55 @@
+package cli
+
+import (
+	"fmt"
+	"io"
+)
+
+// Emoji open a command's report. One per command, so what enzo just did is
+// recognisable before a word of it is read, and so the same command always
+// looks the same in a scrollback full of them.
+//
+// emojiFinish is here although `enzo finish` does not exist yet. The set is
+// the thing being designed, not each command's decoration, so the choice
+// belongs beside the others rather than with whoever writes the command.
+const (
+	emojiNew    = "✨"
+	emojiStart  = "🟢"
+	emojiAbort  = "❌"
+	emojiFinish = "🏁"
+	emojiSetup  = "🔑"
+)
+
+// headline opens a report: the command's emoji, then what it is doing.
+func headline(w io.Writer, emoji, format string, a ...any) {
+	fmt.Fprintf(w, "%s %s\n", emoji, fmt.Sprintf(format, a...))
+}
+
+// row is one line under a headline: what was done, and what it was done to.
+type row struct{ verb, noun string }
+
+// rows prints a block of rows with their nouns in a column.
+func rows(w io.Writer, rr ...row) {
+	width := 0
+	for _, r := range rr {
+		if n := len(r.verb); n > width {
+			width = n
+		}
+	}
+	for _, r := range rr {
+		printRow(w, width, r.verb, r.noun)
+	}
+}
+
+// printRow prints one row, padding the verb out to width.
+//
+// It is separate from rows because `enzo abort` prints each line as that step
+// succeeds — a report of what actually happened, ending wherever it ended —
+// and so cannot measure the block before it starts printing it.
+func printRow(w io.Writer, width int, verb, noun string) {
+	fmt.Fprintf(w, "  %-*s %s\n", width+1, verb+":", noun)
+}
+
+// abortWidth is the widest verb `enzo abort` reports with, so its rows line up
+// despite being printed one at a time.
+const abortWidth = len("switched to")

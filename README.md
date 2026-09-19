@@ -14,7 +14,7 @@ enzo is pretty.
 | --- | --- | --- |
 | `enzo setup` | **done** | create the `.enzo` file with the token used to reach this repo |
 | `enzo list` | **done** | list the open issues assigned to me in current repo — selecting one starts it, the top option is "new", `ctrl+n` opens a sub-issue of the highlighted one, esc cancels |
-| `enzo new [sub] [issue-number]` | **done** | create an new issue, or sub issue of current and assign to me |
+| `enzo new [sub] "title" | **done** | create an new issue, or sub issue of current and assign to me |
 | `enzo start [issue-number] ["title"]` | **done** | calls `enzo new` if the issue doesn't exist. Then branch off `main`, push, and create a linked draft PR with no reviewers (if the PR doesn't exist). Then switch to that local branch.
 | `enzo review` | planned | take the current branch's PR out of draft and attach the repo's default reviewers |
 | `enzo finish` | planned | merge the current branch once the PR is ready — waits on, skips, or cancels against pending builds |
@@ -160,14 +160,20 @@ arguments — what it destroys is where you are.
 
 ```
 $ enzo abort
-about to destroy, in justin-efficient/enzo:
-  branch justin-efficient/12-fix-the-thing, here and on origin
-  PR #77 fix the parser crash
+❌ aborting work in justin-efficient/enzo:
+  justin-efficient/12-fix-the-thing : will be deleted forever
+  PR #77 fix the parser crash : will be closed
+  Issue #12 : will remain open, ready for a new pr
   ⚠ 2 commits not on origin — deleting the branch destroys them
   ⚠ 3 files with uncommitted changes, which move to main
 
-#12 stays open. A closed PR cannot be deleted, only closed.
-type nukefromorbit to confirm:
+type nukefromorbit to confirm: nukefromorbit
+
+  switched to: main
+  closed:      PR #77
+  deleted:     origin/justin-efficient/12-fix-the-thing
+  deleted:     justin-efficient/12-fix-the-thing
+  left:        #12 open
 ```
 
 **The issue is left open.** Aborting an attempt is not abandoning the work —
@@ -209,6 +215,45 @@ A log that cannot be written is a warning on stderr, never a failed command:
 enzo will not tell you an issue was not created when it was.
 
 ## Output
+
+Every command that reports writes the same shape: an emoji headline naming what
+it is doing, then indented `verb: noun` rows naming what it did, with the nouns
+in a column.
+
+| command | emoji | headline |
+| --- | --- | --- |
+| `enzo setup` | 🔑 | `set up enzo for <repo>` |
+| `enzo new` | ✨ | `created a new issue #<n>, "<title>"` |
+| `enzo start` | 🟢 | `starting work on Issue #<n> "<title>"` |
+| `enzo abort` | ❌ | `aborting work in <repo>:` |
+| `enzo finish` | 🏁 | *(not implemented)* |
+
+```
+$ enzo start "fix the parser crash"
+✨ created a new issue #12, "fix the parser crash"
+  url: https://github.com/justin-efficient/enzo/issues/12
+🟢 starting work on Issue #12 "fix the parser crash"
+  created: justin-efficient/12-fix-the-parser-crash
+  drafted: PR #13 https://github.com/justin-efficient/enzo/pull/13
+```
+
+The verbs are what enzo *did*, not what the command is for. Starting an issue
+that is already started says so rather than claiming to have redone the work:
+
+```
+$ enzo start 12
+🟢 starting work on Issue #12 "fix the parser crash"
+  switched to: justin-efficient/12-fix-the-parser-crash
+  found:       PR #13 https://github.com/justin-efficient/enzo/pull/13
+```
+
+`enzo abort` inverts the rows, because it is asking rather than reporting:
+before the phrase each row is `noun : what will become of it`, and afterwards
+it reports in the usual `verb: noun` form as each step succeeds.
+
+The emoji live in one place, `internal/cli/output.go`, alongside the helpers
+that print the headline and the rows. `enzo list` is exempt: it owns the
+terminal, and anything printed under it is drawn over by the next frame.
 
 `enzo list` opens the picker when stdin and stdout are both terminals, and
 prints a plain list otherwise, so it composes in pipes and scripts. `--plain`

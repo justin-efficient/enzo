@@ -54,13 +54,32 @@ func New(ctx context.Context, env Env, args []string) error {
 		return err
 	}
 
-	_, err = runNew(ctx, env, root, client, login, slug, newRequest{
+	issue, err := runNew(ctx, env, root, client, login, slug, newRequest{
 		sub:          sub,
 		parentNumber: parentNumber,
 		title:        title,
 		body:         strings.TrimSpace(*body),
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	reportNew(env, issue)
+	return nil
+}
+
+// reportNew announces an issue that was just opened.
+//
+// It belongs to the callers that own the terminal — `enzo new` and, when it
+// opens an issue of its own, `enzo start`. The `enzo list` loop deliberately
+// does not call it: it goes straight back into the picker, which draws over
+// whatever was printed in between.
+func reportNew(env Env, issue *ghclient.Issue) {
+	headline(env.Stdout, emojiNew, "created a new issue #%d, %q", issue.Number, issue.Title)
+	rr := []row{{"url", issue.URL}}
+	if issue.HasParent() {
+		rr = append(rr, row{"linked", fmt.Sprintf("under #%d", issue.ParentNumber)})
+	}
+	rows(env.Stdout, rr...)
 }
 
 // newRequest is everything `enzo new` was asked for, once the arguments are
@@ -118,6 +137,7 @@ func runNew(ctx context.Context, env Env, root string, client ghclient.Client, l
 		// otherwise the issue would render unnested until the next fetch.
 		issue.ParentRepo, issue.ParentNumber = slug.String(), parent.Number
 	}
+
 	return &issue, nil
 }
 

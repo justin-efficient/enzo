@@ -39,9 +39,9 @@ func TestNewCreatesIssue(t *testing.T) {
 	if got := h.client.gotSlug.String(); got != "justin-efficient/enzo" {
 		t.Errorf("created in %q", got)
 	}
-	// The creation is recorded in the log, not printed.
-	if h.out() != "" {
-		t.Errorf("creating should write nothing to stdout, got:\n%s", h.out())
+	// The creation is both announced and recorded in the log.
+	if !strings.Contains(h.out(), `created a new issue #99, "fix the thing"`) {
+		t.Errorf("output should name the issue it opened:\n%s", h.out())
 	}
 	e := h.findLogged(t, "created")
 	if e.Repo != "justin-efficient/enzo" {
@@ -144,8 +144,10 @@ func TestNewSubWithExplicitParent(t *testing.T) {
 	if h.client.linkedChild != 9001 {
 		t.Errorf("linked child id %d, want the created issue's id 9001", h.client.linkedChild)
 	}
-	if h.out() != "" {
-		t.Errorf("creating should write nothing to stdout, got:\n%s", h.out())
+	// A sub-issue names its parent, or the nesting is invisible until the
+	// next `enzo list`.
+	if !strings.Contains(h.out(), "linked: under #12") {
+		t.Errorf("output should name the parent:\n%s", h.out())
 	}
 	e := h.findLogged(t, "linked")
 	if !strings.Contains(e.Text, "#12") {

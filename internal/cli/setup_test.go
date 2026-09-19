@@ -30,7 +30,7 @@ func TestSetupWritesConfig(t *testing.T) {
 	if h.client.viewerCalls != 1 {
 		t.Errorf("Viewer called %d times, want 1", h.client.viewerCalls)
 	}
-	if !strings.Contains(h.out(), "authenticated as justin-efficient") {
+	if !strings.Contains(h.out(), "authenticated: justin-efficient") {
 		t.Errorf("output should confirm the identity:\n%s", h.out())
 	}
 }

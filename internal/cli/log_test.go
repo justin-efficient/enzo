@@ -23,9 +23,10 @@ func TestLogFailureDoesNotFailTheCommand(t *testing.T) {
 	if !strings.Contains(h.stderr.String(), "could not write the log") {
 		t.Errorf("stderr should warn about the log:\n%s", h.stderr.String())
 	}
-	// The warning belongs on stderr, so piping stdout stays clean.
-	if h.out() != "" {
-		t.Errorf("stdout should stay empty, got:\n%s", h.out())
+	// The warning belongs on stderr, so what stdout carries is the report and
+	// nothing else.
+	if strings.Contains(h.out(), "could not write the log") {
+		t.Errorf("the log warning leaked into stdout:\n%s", h.out())
 	}
 }
 

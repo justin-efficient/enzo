@@ -82,13 +82,13 @@ func destroy(ctx context.Context, env Env, root string, client ghclient.Client, 
 	if err := gitrepo.Switch(root, base); err != nil {
 		return fmt.Errorf("nothing was destroyed: %w", err)
 	}
-	fmt.Fprintf(env.Stdout, "  switched to %s\n", base)
+	printRow(env.Stdout, abortWidth, "switched to", base)
 
 	if pr != nil {
 		if err := client.ClosePullRequest(ctx, slug, pr.Number); err != nil {
 			return err
 		}
-		fmt.Fprintf(env.Stdout, "  closed   PR #%d\n", pr.Number)
+		printRow(env.Stdout, abortWidth, "closed", fmt.Sprintf("PR #%d", pr.Number))
 		record(env, root, slug.String(), "aborted",
 			fmt.Sprintf("PR #%d for #%d on %s", pr.Number, number, branch), pr.URL)
 	}
@@ -97,14 +97,14 @@ func destroy(ctx context.Context, env Env, root string, client ghclient.Client, 
 		if err := gitrepo.DeleteRemoteBranch(root, "origin", branch); err != nil {
 			return err
 		}
-		fmt.Fprintf(env.Stdout, "  deleted  origin/%s\n", branch)
+		printRow(env.Stdout, abortWidth, "deleted", "origin/"+branch)
 	}
 
 	if err := gitrepo.DeleteBranch(root, branch); err != nil {
 		return err
 	}
-	fmt.Fprintf(env.Stdout, "  deleted  %s\n", branch)
-	fmt.Fprintf(env.Stdout, "  left     #%d open\n", number)
+	printRow(env.Stdout, abortWidth, "deleted", branch)
+	printRow(env.Stdout, abortWidth, "left", fmt.Sprintf("#%d open", number))
 	return nil
 }
 
@@ -119,7 +119,7 @@ func confirmAbort(env Env, root string, slug gitrepo.Slug, branch string, number
 	// by being the outcome the other two do not imply — GitHub *can* delete
 	// an issue, so its survival is worth stating rather than assuming. See
 	// docs/decisions/0005-abort-closes-it-cannot-delete.md.
-	fmt.Fprintf(env.Stdout, "aborting work in %s:\n", slug)
+	headline(env.Stdout, emojiAbort, "aborting work in %s:", slug)
 	fmt.Fprintf(env.Stdout, "  %s : will be deleted forever\n", branch)
 	if pr != nil {
 		fmt.Fprintf(env.Stdout, "  PR #%d %s : will be closed\n", pr.Number, pr.Title)
@@ -136,6 +136,7 @@ func confirmAbort(env Env, root string, slug gitrepo.Slug, branch string, number
 		fmt.Fprintf(env.Stdout, "  ⚠ %s with uncommitted changes, which move to %s\n",
 			plural(len(dirty), "file"), base)
 	}
+	fmt.Fprintln(env.Stdout)
 	fmt.Fprintf(env.Stdout, "type %s to confirm: ", confirmPhrase)
 
 	line, err := readLine(env)

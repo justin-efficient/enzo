@@ -66,6 +66,13 @@ func TestStartExistingIssue(t *testing.T) {
 	if !strings.Contains(e.Text, "#300") || !strings.Contains(e.Text, "#12") {
 		t.Errorf("logged text = %q, want both numbers", e.Text)
 	}
+	// The verbs say what enzo did: it made both the branch and the PR.
+	if !strings.Contains(h.out(), "created: justin-efficient/12-fix-the-thing") {
+		t.Errorf("output should say it created the branch:\n%s", h.out())
+	}
+	if !strings.Contains(h.out(), "drafted: PR #300") {
+		t.Errorf("output should say it drafted the PR:\n%s", h.out())
+	}
 	if !strings.Contains(h.out(), "pull/300") {
 		t.Errorf("output should name the PR:\n%s", h.out())
 	}
@@ -274,6 +281,10 @@ func TestStartBodyFlagGoesToTheIssue(t *testing.T) {
 // Running start twice should settle rather than open a second pull request.
 func TestStartIsIdempotent(t *testing.T) {
 	h := startReady(t)
+	// The state the first `enzo start` would have left: the branch exists
+	// here, and the pull request is open on GitHub.
+	mustGit(t, h.root, "switch", "-c", "justin-efficient/12-fix-the-thing")
+	mustGit(t, h.root, "switch", "main")
 	h.client.existingPR = &ghclient.PullRequest{
 		Number: 77, Title: "fix the thing", State: "open", Draft: true,
 		Head: "justin-efficient/12-fix-the-thing", Base: "main",
@@ -290,6 +301,14 @@ func TestStartIsIdempotent(t *testing.T) {
 	// Getting you onto the branch is still the point of the command.
 	if got := h.branch(t); got != "justin-efficient/12-fix-the-thing" {
 		t.Errorf("on branch %q", got)
+	}
+	// Nothing was made this time, and the verbs have to say so rather than
+	// claiming the work of the first `enzo start` over again.
+	if !strings.Contains(h.out(), "switched to: justin-efficient/12-fix-the-thing") {
+		t.Errorf("output should say it switched to the branch:\n%s", h.out())
+	}
+	if !strings.Contains(h.out(), "found:") || strings.Contains(h.out(), "drafted:") {
+		t.Errorf("output should say it found the PR, not drafted one:\n%s", h.out())
 	}
 	if !strings.Contains(h.out(), "pull/77") {
 		t.Errorf("output should name the PR that is already open:\n%s", h.out())

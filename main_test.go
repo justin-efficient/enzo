@@ -304,7 +304,7 @@ func TestSetupThenList(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("setup exited %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
 	}
-	if !strings.Contains(stdout, "authenticated as justin-efficient") {
+	if !strings.Contains(stdout, "authenticated: justin-efficient") {
 		t.Errorf("setup output:\n%s", stdout)
 	}
 
@@ -443,9 +443,8 @@ func TestNewCreatesAnIssue(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("new exited %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
 	}
-	// Creating is silent; the record goes to the log.
-	if stdout != "" {
-		t.Errorf("stdout should be empty, got:\n%s", stdout)
+	if !strings.Contains(stdout, `created a new issue #57, "from the CLI"`) {
+		t.Errorf("stdout should name the issue it opened, got:\n%s", stdout)
 	}
 	lines := readLog(t, logPath)
 	if len(lines) != 1 {
@@ -486,8 +485,8 @@ func TestNewSubLinksToParent(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("new sub exited %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
 	}
-	if stdout != "" {
-		t.Errorf("stdout should be empty, got:\n%s", stdout)
+	if !strings.Contains(stdout, "linked: under #12") {
+		t.Errorf("stdout should name the parent, got:\n%s", stdout)
 	}
 	lines := readLog(t, logPath)
 	if len(lines) != 2 {
