@@ -70,6 +70,16 @@ type fakeClient struct {
 	closePRErr   error
 	closePRCalls int
 
+	// What `enzo finish` does and sees.
+	readyCalls    int
+	readiedNodeID string
+	readyErr      error
+	readiness     ghclient.Readiness
+	readinessErr  error
+	mergedPR      int
+	mergeCalls    int
+	mergeErr      error
+
 	viewerCalls   int
 	createCalls   int
 	assignedCalls int
@@ -121,6 +131,22 @@ func (f *fakeClient) ClosePullRequest(_ context.Context, _ gitrepo.Slug, number 
 	f.closePRCalls++
 	f.closedPR = number
 	return f.closePRErr
+}
+
+func (f *fakeClient) MarkReadyForReview(_ context.Context, nodeID string) error {
+	f.readyCalls++
+	f.readiedNodeID = nodeID
+	return f.readyErr
+}
+
+func (f *fakeClient) Readiness(_ context.Context, _ gitrepo.Slug, _ int) (ghclient.Readiness, error) {
+	return f.readiness, f.readinessErr
+}
+
+func (f *fakeClient) MergePullRequest(_ context.Context, _ gitrepo.Slug, number int) error {
+	f.mergeCalls++
+	f.mergedPR = number
+	return f.mergeErr
 }
 
 func (f *fakeClient) Viewer(context.Context) (string, error) {

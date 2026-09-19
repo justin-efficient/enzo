@@ -112,6 +112,7 @@ usage:
                         branch and draft a PR for #n, opening it first
                         if you gave a title instead of a number
   enzo abort            close the PR and delete the branch you are on
+  enzo finish           undraft, check, and merge the PR you are on
   enzo help             show this message
 `
 
@@ -134,6 +135,8 @@ func Run(ctx context.Context, env Env, args []string) error {
 		return Start(ctx, env, args)
 	case "abort":
 		return Abort(ctx, env, args)
+	case "finish":
+		return Finish(ctx, env, args)
 	case "help", "-h", "--help":
 		fmt.Fprint(env.Stdout, Usage())
 		return nil

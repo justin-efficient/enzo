@@ -34,8 +34,12 @@ const indent = "   "
 // row is one line under a headline: what was done, and what it was done to.
 type row struct{ verb, noun string }
 
-// rows prints a block of rows with their nouns in a column.
-func rows(w io.Writer, rr ...row) {
+// rows prints a block of rows with their nouns in a column, and returns the
+// width it lined them up at. A later row that belongs to the same block —
+// `enzo finish` prints its result only once the merge has gone through — is
+// printed with printRow at that width, so it joins the column rather than
+// starting one of its own.
+func rows(w io.Writer, rr ...row) int {
 	width := 0
 	for _, r := range rr {
 		if n := len(r.verb); n > width {
@@ -45,6 +49,7 @@ func rows(w io.Writer, rr ...row) {
 	for _, r := range rr {
 		printRow(w, width, r.verb, r.noun)
 	}
+	return width
 }
 
 // printRow prints one row, padding the verb out to width.

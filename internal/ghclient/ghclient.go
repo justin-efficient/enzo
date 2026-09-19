@@ -67,6 +67,13 @@ type Client interface {
 	CreatePullRequest(ctx context.Context, slug gitrepo.Slug, in NewPullRequest) (PullRequest, error)
 	// ClosePullRequest closes a pull request without merging it.
 	ClosePullRequest(ctx context.Context, slug gitrepo.Slug, number int) error
+	// MarkReadyForReview takes a pull request out of draft, by node id.
+	// REST cannot do this; see docs/decisions/0006-finish-needs-graphql.md.
+	MarkReadyForReview(ctx context.Context, nodeID string) error
+	// Readiness reports what stands between a pull request and a merge.
+	Readiness(ctx context.Context, slug gitrepo.Slug, number int) (Readiness, error)
+	// MergePullRequest merges a pull request.
+	MergePullRequest(ctx context.Context, slug gitrepo.Slug, number int) error
 }
 
 // API is the go-github backed implementation of Client.

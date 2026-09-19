@@ -1,12 +1,10 @@
 # 🚘 enzo
 
-A tiny CLI for GitHub that makes issue lifecycle management easier.
+A tiny, opinionated CLI for GitHub that makes issue & PR management simpler for engineers.
 
-enzo keeps PRs and issues linked.
-
-enzo is stateless.
-
-enzo is pretty.
+1. enzo keeps PRs and issues linked.
+2. enzo is stateless.
+3. enzo is pretty.
 
 ## Commands
 
@@ -16,8 +14,7 @@ enzo is pretty.
 | `enzo list` | **done** | list the open issues assigned to me in current repo — selecting one starts it, the top option is "new", `ctrl+n` opens a sub-issue of the highlighted one, esc cancels |
 | `enzo new [sub] "title" | **done** | create an new issue, or sub issue of current and assign to me |
 | `enzo start [issue-number] ["title"]` | **done** | calls `enzo new` if the issue doesn't exist. Then branch off `main`, push, and create a linked draft PR with no reviewers (if the PR doesn't exist). Then switch to that local branch.
-| `enzo review` | planned | take the current branch's PR out of draft and attach the repo's default reviewers |
-| `enzo finish` | planned | merge the current branch once the PR is ready — waits on, skips, or cancels against pending builds |
+| `enzo finish` | **done** | take the PR out of draft, check it can merge — mergeable, review, its own checks, and the base branch's build — then merge it |
 | `enzo abort` | **done** | close the PR and delete the branch, here and on origin, if user confirms by typing "nukefromorbit". GitHub cannot delete a PR, only close it
 
 Running `enzo` with no arguments is the same as `enzo list`.
@@ -152,6 +149,51 @@ reopening work.
 
 In `enzo list`, picking an issue runs exactly this, on the row you highlighted.
 
+## Finishing
+
+`enzo finish` takes the pull request on the branch you are standing on out of
+draft, checks everything between it and the base branch, and merges it. Like
+`enzo abort` it takes no arguments — what it finishes is where you are.
+
+```
+$ enzo finish
+🏁 finishing Issue #12 "fix the thing"
+   undrafted: PR #77
+   mergeable: yes, clean
+   review:    not required here
+   checks:    all passed
+   main:      passing at 0d752a6
+   merged:    PR #77 into main
+```
+
+The five rows are the five things it checks, in order. A run that refuses
+prints the same five and then says why, so one run names everything that is
+wrong rather than one thing per attempt:
+
+```
+$ enzo finish
+🏁 finishing Issue #12 "fix the thing"
+   undrafted: PR #77
+   mergeable: yes, clean
+   review:    required — waiting on someone, a-team
+   checks:    failed: dist
+   main:      passing at 0d752a6
+enzo: not merged: review is required and has not been given; checks failed
+```
+
+**The base branch is reported, not enforced.** A red `main` is worth seeing
+before you add to it, but it is not yours to fix and it does not make your work
+unmergeable. Everything else that fails stops the merge.
+
+**enzo requests no reviewers of its own.** GitHub already asks CODEOWNERS when
+a pull request leaves draft; enzo reports who was asked and waits. Nobody is
+notified by a decision enzo made.
+
+**Taking a pull request out of draft is the one thing REST cannot do.**
+`PATCH /pulls/{n}` with `draft: false` answers 200 and changes nothing, so this
+is the command that put a small GraphQL client in `internal/ghclient`. See
+[decision 0006](docs/decisions/0006-finish-needs-graphql.md).
+
 ## Aborting
 
 `enzo abort` throws away the attempt on the branch you are standing on: the
@@ -226,7 +268,7 @@ in a column.
 | `enzo new` | ✨ | `created a new issue #<n>, "<title>"` |
 | `enzo start` | 🟢 | `starting work on Issue #<n> "<title>"` |
 | `enzo abort` | ❌ | `aborting work in <repo>:` |
-| `enzo finish` | 🏁 | *(not implemented)* |
+| `enzo finish` | 🏁 | `finishing Issue #<n> "<title>"` |
 
 ```
 $ enzo start "fix the parser crash"

@@ -16,6 +16,9 @@ type PullRequest struct {
 	State  string
 	URL    string
 	Draft  bool
+	// NodeID is GitHub's global id. The GraphQL mutations address a pull
+	// request by this rather than by number.
+	NodeID string
 	// Head is the branch the PR merges from, Base the one it merges into.
 	Head string
 	Base string
@@ -92,6 +95,7 @@ func convertPR(pr *github.PullRequest) PullRequest {
 		State:  pr.GetState(),
 		URL:    pr.GetHTMLURL(),
 		Draft:  pr.GetDraft(),
+		NodeID: pr.GetNodeID(),
 		Head:   pr.GetHead().GetRef(),
 		Base:   pr.GetBase().GetRef(),
 	}
