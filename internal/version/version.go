@@ -18,4 +18,8 @@ func Banner() string { return fmt.Sprintf("🚘 enzo v%s", Version) }
 // Credit is how enzo signs what it leaves behind: the commit at the root of a
 // branch `enzo start` made, and the footer of an issue enzo opened. It answers
 // "what put this here?" wherever something turns up with no author.
-func Credit() string { return "Created by " + Banner() }
+//
+// It says "a human with" because that is the true answer. enzo opens the
+// issue, but somebody asked it to, and a footer that named only the tool
+// invites the reader to file it as machine output and stop reading.
+func Credit() string { return "Created by a human with " + Banner() }

@@ -74,10 +74,14 @@ enzo will not tell you an issue was not created when it was.
 
 ## Signing
 
-Every issue and pull request enzo opens carries a `Created by 🚘 enzo` footer,
-so an issue that turns up with no obvious author says where it came from. An
-issue opened with no body at all is still signed; that is the case where the
-question gets asked.
+Every issue and pull request enzo opens carries a `Created by a human with 🚘
+enzo` footer, so an issue that turns up with no obvious author says where it
+came from. An issue opened with no body at all is still signed; that is the
+case where the question gets asked.
+
+The footer credits the person, not the tool. enzo opened the issue, but
+somebody asked it to, and a footer naming only the tool invites the reader to
+file it as machine output and stop reading.
 
 Everything that shows a version calls `version.Banner()` or `version.Credit()`:
 

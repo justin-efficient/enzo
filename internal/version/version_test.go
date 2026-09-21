@@ -38,13 +38,14 @@ func TestBanner(t *testing.T) {
 }
 
 // Credit is what enzo leaves on things it made, so it has to name both the
-// tool and the version — the point is answering "what put this here?".
+// tool and the version — the point is answering "what put this here?". It
+// credits the person, not the tool: enzo did the typing, somebody asked for it.
 func TestCredit(t *testing.T) {
 	got := Credit()
 	if !strings.Contains(got, Banner()) {
 		t.Errorf("Credit() = %q, want it to contain the banner %q", got, Banner())
 	}
-	if !strings.HasPrefix(got, "Created by ") {
-		t.Errorf("Credit() = %q, want it to say what made the thing", got)
+	if !strings.HasPrefix(got, "Created by a human with ") {
+		t.Errorf("Credit() = %q, want it to credit the person who asked", got)
 	}
 }

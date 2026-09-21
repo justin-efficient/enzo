@@ -30,9 +30,9 @@ has to be on the branch first.
 
 ## Decision
 
-`enzo start` commits `--allow-empty` with the subject `Created by 🚘 enzo
-vX.Y.Z`, pushes the branch, and opens the draft PR against the repository's
-default branch.
+`enzo start` commits `--allow-empty` with the subject `Created by a human with
+🚘 enzo vX.Y.Z`, pushes the branch, and opens the draft PR against the
+repository's default branch.
 
 The subject names the tool and its version rather than the issue, because the
 question someone asks on finding an empty commit at the root of a branch is
