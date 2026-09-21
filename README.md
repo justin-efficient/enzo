@@ -51,43 +51,66 @@ enzo new sub 12                           # a sub-issue of #12, title prompted
 enzo new sub 12 "fix it"                  # a sub-issue of #12 with that title
 ```
 
-Every issue enzo opens is signed. The body it sends is what you wrote, a
-horizontal rule, then `Created by 🚘 enzo v0.2.0` in italics — so an issue that
-turns up with no obvious author says where it came from. An issue opened with
-no body at all is still signed; that is the case where the question gets asked.
-Pull requests `enzo start` opens get the same footer.
-
 A title given on the command line skips the form entirely, so the body is left
-to the footer unless `--body` says otherwise. A bare number straight after `sub` is the
-parent issue; anything else there is the title. Quote the title — enzo rejects
-an unquoted one rather than guessing where it ends.
+to the footer unless `--body` says otherwise. A bare number straight after
+`sub` is the parent issue; anything else there is the title. Quote the title —
+enzo rejects an unquoted one.
 
 Sub-issues use GitHub's native parent/child link, so they show up in the
 parent's sub-issue list and progress bar.
 
+Every issue and pull request enzo opens is signed: what you wrote, a horizontal
+rule, then `Created by 🚘 enzo v0.2.0` in italics. An issue opened with no body
+at all is still signed.
+
 Picking "new" in `enzo list` runs the same flow and then returns to the list,
 with the issue you just opened already in it. Backing out of the form returns
-to the list too. Esc on the list itself is what exits.
+to the list too; esc on the list itself is what exits. After creating, enzo
+shows a spinner until GitHub's listing has the new issue — and, for a
+sub-issue, its parent link too. Esc stops waiting early and shows the list as
+it stands.
 
-GitHub's issue listing takes a few seconds to catch up with a creation, so
-after creating, enzo shows a spinner until the listing has the new issue — and
-for a sub-issue, its parent link too — then draws the list from that response.
-The list is always exactly what GitHub reported; enzo remembers nothing between
-renders. Esc stops waiting early and shows the list as it stands. See
-[decision 0003](docs/decisions/0003-wait-for-github-to-catch-up.md).
+Creating an issue from the picker prints nothing.
 
-In the list, `ctrl+n` on a highlighted issue opens a sub-issue of it — no need
-to name the parent, it is the row you are on. On the "new" row `ctrl+n` opens a
-top-level issue, the same as enter.
+## Listing issues
 
-Creating an issue prints nothing. What enzo creates goes to the log instead, so
-the picker is not interrupted by output and there is a record afterwards.
+```sh
+enzo list            # picker when stdin and stdout are both terminals
+enzo list --plain    # plain list, never the picker
+```
+
+Without a terminal on both ends, `enzo list` prints the plain list, so it
+composes in pipes and scripts.
+
+| key | in the picker |
+| --- | --- |
+| ↑ / ↓ | move |
+| enter | start the highlighted issue, or open the form on the "new issue" row |
+| `ctrl+n` | open a sub-issue of the highlighted issue — a top-level issue on the "new issue" row |
+| esc | cancel |
+
+```
+open issues assigned to you in justin-efficient/enzo
+
+> + new issue
+  #4 enzo finish should wait on required checks [bug]
+  #1 implement enzo start
+    #5 sub-issue created by enzo new
+
+🚘 enzo v0.2.0 · ↑/↓ move · enter select · ctrl+n sub-issue · esc cancel
+```
+
+Sub-issues are nested under their parent, two spaces per level. An issue whose
+parent is not in the list — not assigned to you, closed, or in another
+repository — stays at the top level.
+
+Picking an issue runs `enzo start` on it.
 
 ## Starting work
 
-`enzo start` is the one command between an issue and a branch with a draft pull
-request on it. It creates whichever of the three does not exist yet, so running
-it twice on the same issue settles rather than doing anything again.
+`enzo start` creates whichever of the issue, the branch and the draft pull
+request does not exist yet, so running it twice on the same issue settles
+rather than doing anything again.
 
 ```sh
 enzo start 12                 # work on #12
@@ -96,9 +119,7 @@ enzo start "fix the parser"   # open an issue with that title, then work on it
 enzo start "fix it" --body "detail"
 ```
 
-An issue number *and* a title is an error: #12 already has a title, and two
-sources for it is a mistake worth naming rather than silently resolving. With
-neither, there is nothing to start, which is also an error.
+An issue number *and* a title is an error. So is neither.
 
 What it does, in order:
 
@@ -109,20 +130,14 @@ What it does, in order:
    characters, on a word boundary.
 
    A new branch is cut from **origin's default branch**, freshly fetched — not
-   from whatever you were standing on. Run `enzo start` from the middle of
-   another feature branch and the new one still comes off `main`, so one
-   issue's work never arrives carrying another's. An existing branch of that
-   name is switched to as it is; enzo will not rebase it for you.
+   from whatever you were standing on. An existing branch of that name is
+   switched to as it is; enzo will not rebase it for you.
 
    Uncommitted work comes along, the same as a hand-typed `git switch`. When it
    cannot, git refuses and enzo stops there, leaving you where you were.
-3. **A commit, if the branch has nothing the base does not** — GitHub will not
-   open a pull request between two identical branches, so such a branch gets an
-   empty `Created by 🚘 enzo v0.2.0` commit to hang one on. enzo **fetches the
-   base first**: a stale `origin/main` makes a branch look ahead of a base that
-   has already absorbed it, which is exactly the state GitHub rejects. A branch
-   you have really worked on gets nothing. See
-   [decision 0004](docs/decisions/0004-draft-pr-needs-a-commit.md).
+3. **A commit, if the branch has nothing the base does not** — an empty
+   `Created by 🚘 enzo v0.2.0` commit, so there is something to open a pull
+   request on. A branch you have really worked on gets nothing.
 4. **The push** — `git push -u origin <branch>`.
 5. **The draft PR** — titled after the issue, against the repository's default
    branch, with no reviewers, and bodied:
@@ -136,18 +151,13 @@ What it does, in order:
    ```
 
    That closing keyword is what keeps the PR and the issue linked, and what
-   will let `enzo finish` close the issue by merging. The footer is the same
-   one an issue body gets, from the same function.
+   lets `enzo finish` close the issue by merging.
 
 Every GitHub read happens before the worktree is touched, so a call that was
-going to fail leaves you on the branch you started on rather than stranded on a
-new one. Once enzo starts changing things it stops at the first error and says
-what it got done.
+going to fail leaves you on the branch you started on. Once enzo starts
+changing things it stops at the first error and says what it got done.
 
-Starting a closed issue is a warning on stderr, not a refusal — you may be
-reopening work.
-
-In `enzo list`, picking an issue runs exactly this, on the row you highlighted.
+Starting a closed issue is a warning on stderr, not a refusal.
 
 ## Finishing
 
@@ -167,8 +177,7 @@ $ enzo finish
 ```
 
 The five rows are the five things it checks, in order. A run that refuses
-prints the same five and then says why, so one run names everything that is
-wrong rather than one thing per attempt:
+prints the same five and then says why:
 
 ```
 $ enzo finish
@@ -181,18 +190,11 @@ $ enzo finish
 enzo: not merged: review is required and has not been given; checks failed
 ```
 
-**The base branch is reported, not enforced.** A red `main` is worth seeing
-before you add to it, but it is not yours to fix and it does not make your work
-unmergeable. Everything else that fails stops the merge.
+The base branch is **reported, not enforced**: a red `main` does not stop the
+merge. Everything else that fails does.
 
-**enzo requests no reviewers of its own.** GitHub already asks CODEOWNERS when
-a pull request leaves draft; enzo reports who was asked and waits. Nobody is
-notified by a decision enzo made.
-
-**Taking a pull request out of draft is the one thing REST cannot do.**
-`PATCH /pulls/{n}` with `draft: false` answers 200 and changes nothing, so this
-is the command that put a small GraphQL client in `internal/ghclient`. See
-[decision 0006](docs/decisions/0006-finish-needs-graphql.md).
+**enzo requests no reviewers of its own.** It reports whoever GitHub asked when
+the pull request left draft, and waits.
 
 ## Aborting
 
@@ -218,133 +220,26 @@ type nukefromorbit to confirm: nukefromorbit
    left:        #12 open
 ```
 
-**The issue is left open.** Aborting an attempt is not abandoning the work —
-the usual reason to abort is to start the same issue again from a clean branch,
-and `enzo start 12` is exactly the right next command.
-
-**A pull request cannot be deleted.** Not by you, not by an admin, not through
-any API — GitHub only lets one be closed. Issues are the confusing exception:
-those can be deleted, by an admin, through GraphQL. See
-[decision 0005](docs/decisions/0005-abort-closes-it-cannot-delete.md).
+The issue is left open — `enzo start 12` is the right next command if you want
+the same issue on a clean branch.
 
 Anything that will not survive is named *before* the phrase is asked for.
-Typing anything other than `nukefromorbit` cancels and touches nothing. The
-phrase is the safety rather than the terminal, so `echo nukefromorbit | enzo
-abort` works in a script; there is no `--force`, which would be easier to fire
-by accident than the phrase.
+Typing anything other than `nukefromorbit` cancels and touches nothing. There
+is no `--force`, but the phrase can be piped: `echo nukefromorbit | enzo
+abort`.
 
 enzo only aborts branches it named (`<login>/<number>-<title>`) and refuses
 anything else, the default branch included. It switches you to the default
 branch before deleting, and if uncommitted work cannot come with you, git
 refuses and enzo stops having destroyed nothing.
 
-## Log
-
-enzo appends a line for each thing it creates:
-
-```
-2026-09-18T01:41:53Z justin-efficient/enzo created #11 bork2 https://github.com/justin-efficient/enzo/issues/11
-2026-09-18T01:44:02Z justin-efficient/enzo linked #12 under #1 https://github.com/justin-efficient/enzo/issues/12
-2026-09-18T02:10:14Z justin-efficient/enzo drafted PR #13 for #11 on justin-efficient/11-bork2 https://github.com/justin-efficient/enzo/pull/13
-2026-09-18T02:31:07Z justin-efficient/enzo aborted PR #13 for #11 on justin-efficient/11-bork2 https://github.com/justin-efficient/enzo/pull/13
-```
-
-It lives at `~/.local/state/enzo/enzo.log` (`$XDG_STATE_HOME/enzo/enzo.log`
-when that is set), mode `0600` — it names private repositories. Override it
-with `$ENZO_LOG`, or with `"log"` in `.enzo`, which wins over both.
-
-A log that cannot be written is a warning on stderr, never a failed command:
-enzo will not tell you an issue was not created when it was.
-
-## Output
-
-Every command that reports writes the same shape: an emoji headline naming what
-it is doing, then indented `verb: noun` rows naming what it did, with the nouns
-in a column.
-
-| command | emoji | headline |
-| --- | --- | --- |
-| `enzo setup` | 🔑 | `set up enzo for <repo>` |
-| `enzo new` | ✨ | `created a new issue #<n>, "<title>"` |
-| `enzo start` | 🟢 | `starting work on Issue #<n> "<title>"` |
-| `enzo abort` | ❌ | `aborting work in <repo>:` |
-| `enzo finish` | 🏁 | `finishing Issue #<n> "<title>"` |
-
-```
-$ enzo start "fix the parser crash"
-✨ created a new issue #12, "fix the parser crash"
-   url: https://github.com/justin-efficient/enzo/issues/12
-🟢 starting work on Issue #12 "fix the parser crash"
-   created: justin-efficient/12-fix-the-parser-crash
-   drafted: PR #13 https://github.com/justin-efficient/enzo/pull/13
-```
-
-The verbs are what enzo *did*, not what the command is for. Starting an issue
-that is already started says so rather than claiming to have redone the work:
-
-```
-$ enzo start 12
-🟢 starting work on Issue #12 "fix the parser crash"
-   switched to: justin-efficient/12-fix-the-parser-crash
-   found:       PR #13 https://github.com/justin-efficient/enzo/pull/13
-```
-
-`enzo abort` inverts the rows, because it is asking rather than reporting:
-before the phrase each row is `noun : what will become of it`, and afterwards
-it reports in the usual `verb: noun` form as each step succeeds.
-
-The emoji live in one place, `internal/cli/output.go`, alongside the helpers
-that print the headline and the rows. `enzo list` is exempt: it owns the
-terminal, and anything printed under it is drawn over by the next frame.
-
-`enzo list` opens the picker when stdin and stdout are both terminals, and
-prints a plain list otherwise, so it composes in pipes and scripts. `--plain`
-forces the plain form.
-
-In the picker, the key hints are signed with the running version:
-
-```
-open issues assigned to you in justin-efficient/enzo
-
-> + new issue
-  #4 enzo finish should wait on required checks [bug]
-  #1 implement enzo start
-    #5 sub-issue created by enzo new
-
-🚘 enzo v0.2.0 · ↑/↓ move · enter select · ctrl+n sub-issue · esc cancel
-```
-
-Sub-issues are nested under their parent, two spaces per level:
-
-```
-#4 enzo finish should wait on required checks
-#1 implement enzo start
-  #5 sub-issue created by enzo new
-```
-
-Nesting comes from the listing itself, so it costs no extra API calls. An issue
-whose parent is not in the list — not assigned to you, closed, or in another
-repository — stays at the top level rather than disappearing.
-
 ## Versioning
 
 enzo is versioned `MAJOR.MINOR.PATCH`, starting at **0.1.0**. The version lives
-in `internal/version` and is the source of truth. `version.Banner()` is the one
-function that formats it, and `version.Credit()` — "Created by" plus the banner
-— is how enzo signs what it leaves behind. Everything that shows a version
-calls one of the two:
-
-| where | which |
-| --- | --- |
-| `enzo --version` | `Banner()` |
-| the first line of `enzo help` | `Banner()` |
-| the help line under the issue list | `Banner()` |
-| the footer of an issue `enzo new` opens | `Credit()` |
-| the footer of a pull request `enzo start` opens | `Credit()` |
-| the empty commit `enzo start` puts at the root of a branch | `Credit()` |
-
-A hardcoded copy of that string anywhere else fails the suite, because it would
-keep printing the old number after a bump.
+in `internal/version` and is the source of truth: `version.Banner()` formats
+it, and `version.Credit()` — "Created by" plus the banner — signs what enzo
+leaves behind. Nothing else hardcodes the string, and the suite fails if
+anything does.
 
 ```sh
 enzo --version     # 🚘 enzo v0.2.0
@@ -386,3 +281,10 @@ terminal or a network. The suite covers:
 - the bubbletea models two ways — `Update` called directly for state, and full programs driven through a pseudo-terminal with `teatest`
 - the commands end to end against fake GitHub and real temporary git repositories — `origin` keeps a GitHub URL, since that is what the slug is parsed from, but `url.<path>.insteadOf` rewrites it to a local bare repo at transport time, so fetches and pushes in the suite are real git operations that cannot leave the machine
 - the built binary as a subprocess, for argument handling and exit codes
+
+### Why enzo is like this
+
+- [docs/design.md](docs/design.md) — the reasoning behind the output shape, the
+  log, signing, and each command's behaviour
+- [docs/decisions/](docs/decisions/) — one file per decision that shaped enzo,
+  especially where we chose not to build something
