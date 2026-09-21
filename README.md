@@ -60,7 +60,7 @@ Sub-issues use GitHub's native parent/child link, so they show up in the
 parent's sub-issue list and progress bar.
 
 Every issue and pull request enzo opens is signed: what you wrote, a horizontal
-rule, then `Created by a human with 🚘 enzo v0.5.1` in italics. An issue opened
+rule, then `Created by a human with 🚘 enzo v0.5.2` in italics. An issue opened
 with no body at all is still signed.
 
 Picking "new" in `enzo list` runs the same flow and then returns to the list,
@@ -97,7 +97,7 @@ open issues assigned to you in justin-efficient/enzo
   #1 implement enzo start
     #5 sub-issue created by enzo new
 
-🚘 enzo v0.5.1 · ↑/↓ move · enter open in browser · ctrl+n new sub-issue · esc cancel
+🚘 enzo v0.5.2 · ↑/↓ move · enter open in browser · ctrl+n new sub-issue · esc cancel
 ```
 
 Sub-issues are nested under their parent, two spaces per level. An issue whose
@@ -140,7 +140,7 @@ What it does, in order:
    Uncommitted work comes along, the same as a hand-typed `git switch`. When it
    cannot, git refuses and enzo stops there, leaving you where you were.
 3. **A commit, if the branch has nothing the base does not** — an empty
-   `Created by a human with 🚘 enzo v0.5.1` commit, so there is something to
+   `Created by a human with 🚘 enzo v0.5.2` commit, so there is something to
    open a pull request on. A branch you have really worked on gets nothing.
 4. **The push** — `git push -u origin <branch>`.
 5. **The draft PR** — titled after the issue, against the repository's default
@@ -151,7 +151,7 @@ What it does, in order:
 
    ---
 
-   *Created by a human with 🚘 enzo v0.5.1*
+   *Created by a human with 🚘 enzo v0.5.2*
    ```
 
    That closing keyword is what keeps the PR and the issue linked, and what
@@ -261,12 +261,12 @@ leaves behind. Nothing else hardcodes the string, and the suite fails if
 anything does.
 
 ```sh
-enzo --version     # 🚘 enzo v0.5.1
+enzo --version     # 🚘 enzo v0.5.2
 ```
 
-Cutting a release is a tag: `git tag -a v0.5.1 -m "0.5.1" && git push --tags`.
+Cutting a release is a tag: `git tag -a v0.5.2 -m "0.5.2" && git push --tags`.
 `make` passes `git describe` into the binary when the tree has a tag, so a
-build from three commits past `v0.5.1` reports `0.5.1-3-gabc123` rather than
+build from three commits past `v0.5.2` reports `0.5.2-3-gabc123` rather than
 claiming to be the release. An untagged tree keeps whatever is in source.
 
 Bump `Version` in `internal/version/version.go` in the same commit as the tag.
