@@ -14,7 +14,7 @@ A tiny, opinionated CLI for GitHub that makes issue & PR management simpler for 
 | `enzo list` | **done** | list the open issues assigned to me in current repo — selecting one opens it in a browser, the top option is "new", `ctrl+n` opens a sub-issue of the highlighted one, esc cancels |
 | `enzo new [sub] "title" | **done** | create an new issue, or sub issue of current and assign to me |
 | `enzo start [issue-number] ["title"]` | **done** | calls `enzo new` if the issue doesn't exist. Then branch off `main`, push, and create a linked draft PR with no reviewers (if the PR doesn't exist). Then switch to that local branch.
-| `enzo finish` | **done** | take the PR out of draft, check it can merge — mergeable, review, its own checks, and the base branch's build — then merge it |
+| `enzo finish` | **done** | check the worktree is clean, take the PR out of draft, check it can merge — mergeable, review, its own checks, and the base branch's build — then merge it |
 | `enzo abort` | **done** | close the PR and delete the branch, here and on origin, if user confirms by typing "nukefromorbit". GitHub cannot delete a PR, only close it
 
 Running `enzo` with no arguments is the same as `enzo list`.
@@ -172,30 +172,41 @@ draft, checks everything between it and the base branch, and merges it. Like
 ```
 $ enzo finish
 🏁 finishing Issue #12 "fix the thing"
-   undrafted: PR #77
-   mergeable: yes, clean
-   review:    not required here
-   checks:    all passed
-   main:      passing at 0d752a6
-   merged:    PR #77 into main
+   ✅ changes:   none, the worktree is clean
+   ✅ undrafted: PR #77
+   ✅ mergeable: yes, clean
+   ✅ review:    not required here
+   ✅ checks:    all passed
+   ✅ main:      passing at 0d752a6
+   ✅ merged:    PR #77 into main
 ```
 
-The five rows are the five things it checks, in order. A run that refuses
-prints the same five and then says why:
+Each row opens with ✅ when that check is satisfied and ❌ when it is not. The
+six rows are the six things it checks, in order. A run that refuses prints the
+same six and then says why, so one run names everything that is wrong rather
+than one thing per attempt:
 
 ```
 $ enzo finish
 🏁 finishing Issue #12 "fix the thing"
-   undrafted: PR #77
-   mergeable: yes, clean
-   review:    required — waiting on someone, a-team
-   checks:    failed: dist
-   main:      passing at 0d752a6
-enzo: not merged: review is required and has not been given; checks failed
+   ❌ changes:   2 files uncommitted: parser.go, parser_test.go
+   ✅ undrafted: PR #77
+   ✅ mergeable: yes, clean
+   ❌ review:    required — waiting on someone, a-team
+   ❌ checks:    failed: dist
+   ✅ main:      passing at 0d752a6
+enzo: not merged: 2 files uncommitted — commit or stash them; review is required and has not been given; checks failed
 ```
 
-The base branch is **reported, not enforced**: a red `main` does not stop the
-merge. Everything else that fails does.
+`changes` is anything uncommitted: staged, unstaged, or a file you never added.
+An untracked file counts, and that is the case most worth catching — the pull
+request merges without it. Up to three are named and the rest counted; `git
+status` has the full list.
+
+A ❌ on `main` is the one cross that does not stop the merge: the base branch
+is **reported, not enforced**. A red `main` is worth seeing before you add to
+it, but the merge goes ahead on the line below. A base that is still building
+is not red. Everything else that fails does stop the merge.
 
 **enzo requests no reviewers of its own.** It reports whoever GitHub asked when
 the pull request left draft, and waits.

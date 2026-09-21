@@ -256,8 +256,8 @@ func report(env Env, issue ghclient.Issue, branch string, pr ghclient.PullReques
 	}
 	headline(env.Stdout, emojiStart, "starting work on Issue #%d %q", issue.Number, issue.Title)
 	rows(env.Stdout,
-		row{branchVerb, branch},
-		row{prVerb, fmt.Sprintf("PR #%d %s", pr.Number, pr.URL)},
+		row{"", branchVerb, branch},
+		row{"", prVerb, fmt.Sprintf("PR #%d %s", pr.Number, pr.URL)},
 	)
 }
 

@@ -79,11 +79,11 @@ func Setup(ctx context.Context, env Env, args []string) error {
 
 	headline(env.Stdout, emojiSetup, "set up enzo for %s", slug)
 	rr := []row{
-		{"authenticated", login},
-		{"wrote", config.Path(root)},
+		{"", "authenticated", login},
+		{"", "wrote", config.Path(root)},
 	}
 	if added {
-		rr = append(rr, row{"added", config.FileName + " to .gitignore"})
+		rr = append(rr, row{"", "added", config.FileName + " to .gitignore"})
 	}
 	rows(env.Stdout, rr...)
 	return nil

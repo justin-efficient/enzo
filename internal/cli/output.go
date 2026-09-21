@@ -20,6 +20,26 @@ const (
 	emojiSetup  = "🔑"
 )
 
+// Marks open a check's row: the check is satisfied, or it is not. Only `enzo
+// finish` reports checks — the other commands report actions they took, which
+// either happened or stopped the command, so their rows carry no mark.
+//
+// markNone is the blank an unmarked row gets inside a marked block, so the
+// verbs still line up. An emoji is two columns wide.
+const (
+	markPass = "✅"
+	markFail = "❌"
+	markNone = "  "
+)
+
+// mark returns the glyph for a check that did or did not pass.
+func mark(ok bool) string {
+	if ok {
+		return markPass
+	}
+	return markFail
+}
+
 // headline opens a report: the command's emoji, then what it is doing.
 func headline(w io.Writer, emoji, format string, a ...any) {
 	fmt.Fprintf(w, "%s %s\n", emoji, fmt.Sprintf(format, a...))
@@ -32,7 +52,8 @@ func headline(w io.Writer, emoji, format string, a ...any) {
 const indent = "   "
 
 // row is one line under a headline: what was done, and what it was done to.
-type row struct{ verb, noun string }
+// mark is the status glyph for a check; an action leaves it empty.
+type row struct{ mark, verb, noun string }
 
 // rows prints a block of rows with their nouns in a column, and returns the
 // width it lined them up at. A later row that belongs to the same block —
@@ -40,14 +61,23 @@ type row struct{ verb, noun string }
 // printed with printRow at that width, so it joins the column rather than
 // starting one of its own.
 func rows(w io.Writer, rr ...row) int {
-	width := 0
+	width, marked := 0, false
 	for _, r := range rr {
 		if n := len(r.verb); n > width {
 			width = n
 		}
+		if r.mark != "" {
+			marked = true
+		}
 	}
 	for _, r := range rr {
-		printRow(w, width, r.verb, r.noun)
+		m := r.mark
+		if m == "" && marked {
+			// One unmarked row in a marked block still needs the gutter, or
+			// its verb hangs left of the others.
+			m = markNone
+		}
+		printMarkedRow(w, m, width, r.verb, r.noun)
 	}
 	return width
 }
@@ -58,7 +88,18 @@ func rows(w io.Writer, rr ...row) int {
 // succeeds — a report of what actually happened, ending wherever it ended —
 // and so cannot measure the block before it starts printing it.
 func printRow(w io.Writer, width int, verb, noun string) {
-	fmt.Fprintf(w, "%s%-*s %s\n", indent, width+1, verb+":", noun)
+	printMarkedRow(w, "", width, verb, noun)
+}
+
+// printMarkedRow prints one row behind a status mark. An empty mark prints the
+// row flush against the indent, which is what every command but `enzo finish`
+// wants.
+func printMarkedRow(w io.Writer, m string, width int, verb, noun string) {
+	prefix := indent
+	if m != "" {
+		prefix += m + " "
+	}
+	fmt.Fprintf(w, "%s%-*s %s\n", prefix, width+1, verb+":", noun)
 }
 
 // abortWidth is the widest verb `enzo abort` reports with, so its rows line up

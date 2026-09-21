@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -14,6 +15,13 @@ import (
 func seedConfig(t *testing.T, h *harness, c *config.Config) {
 	t.Helper()
 	if err := config.Save(h.root, c); err != nil {
+		t.Fatal(err)
+	}
+	// `enzo setup` puts .enzo in .gitignore, so a real repo with a token in it
+	// is still clean. Ignoring it locally gets the harness to the same place
+	// without a commit the tests would have to account for.
+	exclude := filepath.Join(h.root, ".git", "info", "exclude")
+	if err := os.WriteFile(exclude, []byte(config.FileName+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }

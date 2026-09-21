@@ -2,6 +2,8 @@ package cli
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -55,12 +57,13 @@ func TestFinishUndraftsThenMerges(t *testing.T) {
 	out := h.out()
 	for _, want := range []string{
 		`finishing Issue #12 "fix the thing"`,
-		"undrafted: PR #77",
-		"mergeable: yes, clean",
-		"review:    not required here",
-		"checks:    all passed",
-		"main:      passing at 0d752a6",
-		"merged:    PR #77 into main",
+		markPass + " changes:   none, the worktree is clean",
+		markPass + " undrafted: PR #77",
+		markPass + " mergeable: yes, clean",
+		markPass + " review:    not required here",
+		markPass + " checks:    all passed",
+		markPass + " main:      passing at 0d752a6",
+		markPass + " merged:    PR #77 into main",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output is missing %q:\n%s", want, out)
@@ -70,6 +73,87 @@ func TestFinishUndraftsThenMerges(t *testing.T) {
 	e := h.findLogged(t, "merged")
 	if !strings.Contains(e.Text, "#77") || !strings.Contains(e.Text, "#12") {
 		t.Errorf("logged %q, want both numbers", e.Text)
+	}
+}
+
+// Uncommitted work blocks the merge, but reports alongside everything else:
+// one run names every reason rather than one reason at a time.
+func TestFinishRefusesADirtyWorktree(t *testing.T) {
+	h := finishReady(t)
+	if err := os.WriteFile(filepath.Join(h.root, "tracked.txt"), []byte("half done\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	requireErrorContains(t, Finish(context.Background(), h.env, nil), "commit or stash")
+
+	if h.client.mergeCalls != 0 {
+		t.Errorf("merged in %d calls, want 0", h.client.mergeCalls)
+	}
+
+	out := h.out()
+	for _, want := range []string{
+		markFail + " changes:   1 file uncommitted: tracked.txt",
+		markPass + " undrafted: PR #77",
+		markPass + " mergeable: yes, clean",
+		markPass + " checks:    all passed",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output is missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "merged:") {
+		t.Errorf("nothing was merged, so no merged row:\n%s", out)
+	}
+}
+
+// Every reason is named in one go, dirty worktree included.
+func TestFinishNamesEveryBlockerAtOnce(t *testing.T) {
+	h := finishReady(t)
+	if err := os.WriteFile(filepath.Join(h.root, "tracked.txt"), []byte("half done\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h.client.readiness.Checks = "FAILURE"
+	h.client.readiness.Failed = []string{"dist"}
+
+	err := Finish(context.Background(), h.env, nil)
+	for _, want := range []string{"1 file uncommitted", "checks failed"} {
+		requireErrorContains(t, err, want)
+	}
+	if !strings.Contains(h.out(), markFail+" checks:    failed: dist") {
+		t.Errorf("a failing check should be crossed:\n%s", h.out())
+	}
+}
+
+// A file that was never added is the dangerous case: the pull request merges
+// without it. It counts as a change.
+func TestFinishRefusesAnUntrackedFile(t *testing.T) {
+	h := finishReady(t)
+	if err := os.WriteFile(filepath.Join(h.root, "forgotten.go"), []byte("package x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	requireErrorContains(t, Finish(context.Background(), h.env, nil), "commit or stash")
+	if !strings.Contains(h.out(), markFail+" changes:   1 file uncommitted: forgotten.go") {
+		t.Errorf("output should cross the row and name the untracked file:\n%s", h.out())
+	}
+}
+
+// Many dirty files are counted, not listed to the horizon.
+func TestDescribeDirty(t *testing.T) {
+	tests := []struct {
+		paths []string
+		want  string
+	}{
+		{[]string{"a.go"}, "1 file uncommitted: a.go"},
+		{[]string{"a.go", "b.go"}, "2 files uncommitted: a.go, b.go"},
+		{[]string{"a.go", "b.go", "c.go"}, "3 files uncommitted: a.go, b.go, c.go"},
+		{[]string{"a.go", "b.go", "c.go", "d.go"}, "4 files uncommitted: a.go, b.go, c.go, and 1 more"},
+		{[]string{"a", "b", "c", "d", "e"}, "5 files uncommitted: a, b, c, and 2 more"},
+	}
+	for _, tt := range tests {
+		if got := describeDirty(tt.paths); got != tt.want {
+			t.Errorf("describeDirty(%v) = %q, want %q", tt.paths, got, tt.want)
+		}
 	}
 }
 
@@ -171,8 +255,26 @@ func TestFinishMergesOntoABrokenBase(t *testing.T) {
 	if h.client.mergeCalls != 1 {
 		t.Errorf("merged in %d calls, want 1 — a red base is a warning, not a block", h.client.mergeCalls)
 	}
-	if !strings.Contains(h.out(), "main:      failure at 0d752a6") {
-		t.Errorf("output should report the base build:\n%s", h.out())
+	// The cross says main is red. It does not say your work is stuck: the
+	// merge went through on the line above.
+	if !strings.Contains(h.out(), markFail+" main:      failure at 0d752a6") {
+		t.Errorf("output should cross the base build:\n%s", h.out())
+	}
+	if !strings.Contains(h.out(), markPass+" merged:    PR #77 into main") {
+		t.Errorf("output should still report the merge:\n%s", h.out())
+	}
+}
+
+// A base that is still building is not red, so it is not crossed.
+func TestFinishDoesNotCrossABuildingBase(t *testing.T) {
+	h := finishReady(t)
+	h.client.readiness.BaseChecks = "PENDING"
+
+	if err := Finish(context.Background(), h.env, nil); err != nil {
+		t.Fatalf("Finish: %v", err)
+	}
+	if !strings.Contains(h.out(), markPass+" main:      building at 0d752a6") {
+		t.Errorf("a building base should not be crossed:\n%s", h.out())
 	}
 }
 

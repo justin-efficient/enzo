@@ -75,9 +75,9 @@ func New(ctx context.Context, env Env, args []string) error {
 // whatever was printed in between.
 func reportNew(env Env, issue *ghclient.Issue) {
 	headline(env.Stdout, emojiNew, "created a new issue #%d, %q", issue.Number, issue.Title)
-	rr := []row{{"url", issue.URL}}
+	rr := []row{{"", "url", issue.URL}}
 	if issue.HasParent() {
-		rr = append(rr, row{"linked", fmt.Sprintf("under #%d", issue.ParentNumber)})
+		rr = append(rr, row{"", "linked", fmt.Sprintf("under #%d", issue.ParentNumber)})
 	}
 	rows(env.Stdout, rr...)
 }

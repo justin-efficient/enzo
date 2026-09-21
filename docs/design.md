@@ -153,7 +153,32 @@ reopening work.
 
 ## Finishing
 
-The base branch is **reported, not enforced**. A red `main` is worth seeing
+**The worktree is the first check, and it blocks like any other.** Uncommitted
+work is not in the pull request, so merging would ship something other than
+what you have. It reports and joins the list of blockers rather than cutting
+the run short, because the value of this report is that one run names
+everything that is wrong.
+
+That does mean a dirty worktree still gets as far as undrafting, which asks
+CODEOWNERS for review. Undrafting has to come first for the rows beneath it to
+be true — a draft reports its merge state and its review decision differently —
+so the alternative was a complete report or an untouched pull request, and the
+complete report won.
+
+Untracked files count. A file you never added is the case most worth catching —
+the pull request merges without it — and it is the same rule `enzo abort`
+already uses when it warns about what will move to the default branch.
+
+**Every check row opens with ✅ or ❌**, and the mark means only "this check is
+satisfied". `enzo finish` is the only command that marks its rows: the others
+report actions they took, which either happened or stopped the command, so a
+tick beside them would say nothing. The marks live in `internal/cli/output.go`
+with the headline emoji, and `markNone` is the two-space blank an unmarked row
+gets inside a marked block — both marks are two columns wide, which a test
+pins, or every marked block would skew.
+
+The base branch row is the one that can be crossed without blocking: **reported,
+not enforced**. A red `main` is worth seeing
 before you add to it, but it is not yours to fix and it does not make your work
 unmergeable. Everything else that fails stops the merge.
 
