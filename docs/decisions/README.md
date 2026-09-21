@@ -10,3 +10,4 @@ so the same ground is not re-covered later.
 - [0004 — `enzo start` puts an empty commit on a new branch](0004-draft-pr-needs-a-commit.md)
 - [0005 — `enzo abort` closes the pull request, because nothing can delete one](0005-abort-closes-it-cannot-delete.md)
 - [0006 — `enzo finish` uses GraphQL, because REST cannot undraft a pull request](0006-finish-needs-graphql.md) — revisits 0001
+- [0007 — Enter in `enzo list` opens the issue, and nothing starts it](0007-enter-opens-the-issue.md)

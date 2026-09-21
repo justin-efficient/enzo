@@ -125,9 +125,9 @@ func TestListPickerOutcomes(t *testing.T) {
 			emptyOut: true,
 		},
 		{
-			name:    "picking an issue starts it",
-			result:  ui.Result{Action: ui.ActionGrab, Issue: listIssues[0]},
-			wantOut: []string{"#12", "fix the thing", "justin-efficient/12-fix-the-thing", "pull/300"},
+			name:     "picking an issue prints nothing; it opens a browser",
+			result:   ui.Result{Action: ui.ActionChoose, Issue: listIssues[0]},
+			emptyOut: true,
 		},
 	}
 	for _, tt := range tests {
@@ -629,31 +629,51 @@ func TestListCancelExits(t *testing.T) {
 	}
 }
 
-// Picking an existing issue starts it, which is a terminal action: the picker
-// does not come back.
-func TestListGrabStarts(t *testing.T) {
+// Picking an existing issue opens it in a browser and comes back to the list.
+// It starts nothing: no branch, no pull request.
+func TestListChooseOpensBrowser(t *testing.T) {
 	h := newHarness(t, defaultRemote)
 	seedConfig(t, h, &config.Config{Token: "t"})
 	h.client.issues = listIssues
 	h.env.Interactive = true
-	h.picked = ui.Result{Action: ui.ActionGrab, Issue: listIssues[0]}
+	h.picked = ui.Result{Action: ui.ActionChoose, Issue: listIssues[0]}
 
 	if err := List(context.Background(), h.env, nil); err != nil {
 		t.Fatalf("List: %v", err)
 	}
-	if h.pickCalls != 1 {
-		t.Errorf("picker ran %d times, want 1 — starting should exit", h.pickCalls)
+	if len(h.opened) != 1 || h.opened[0] != listIssues[0].URL {
+		t.Fatalf("opened %v, want [%s]", h.opened, listIssues[0].URL)
 	}
-	// The row the user highlighted is the issue; re-reading it would be a
-	// wasted call against an issue we already have.
-	if h.client.createCalls != 0 {
-		t.Errorf("starting an existing issue should not create one")
+	// Opening is not terminal: the fake picker cancels on its second call,
+	// which is how the loop ends here.
+	if h.pickCalls != 2 {
+		t.Errorf("picker ran %d times, want 2 — opening should return to the list", h.pickCalls)
 	}
-	if h.client.createPRCalls != 1 {
-		t.Fatalf("CreatePullRequest called %d times, want 1", h.client.createPRCalls)
+	if h.client.createPRCalls != 0 || h.client.createCalls != 0 {
+		t.Errorf("opening an issue must not create a branch or a pull request")
 	}
-	if got := h.branch(t); got != "justin-efficient/12-fix-the-thing" {
-		t.Errorf("left on branch %q", got)
+	if got := h.branch(t); got != "main" {
+		t.Errorf("left on branch %q, want main — opening should not switch", got)
+	}
+}
+
+// A browser that will not open is a warning with the URL in it, not a failed
+// command: the list stays usable on a machine with no browser.
+func TestListChooseBrowserFailureWarns(t *testing.T) {
+	h := newHarness(t, defaultRemote)
+	seedConfig(t, h, &config.Config{Token: "t"})
+	h.client.issues = listIssues
+	h.env.Interactive = true
+	h.picked = ui.Result{Action: ui.ActionChoose, Issue: listIssues[0]}
+	h.openErr = errBoom
+
+	if err := List(context.Background(), h.env, nil); err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	for _, want := range []string{"boom", listIssues[0].URL} {
+		if !strings.Contains(h.stderr.String(), want) {
+			t.Errorf("stderr missing %q:\n%s", want, h.stderr.String())
+		}
 	}
 }
 

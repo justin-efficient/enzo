@@ -11,7 +11,8 @@ import (
 	"github.com/justin-efficient/enzo/internal/ui"
 )
 
-// List shows the open issues assigned to you and acts on the one you pick.
+// List shows the open issues assigned to you and opens the one you pick in a
+// browser.
 func List(ctx context.Context, env Env, args []string) error {
 	fs := flag.NewFlagSet("list", flag.ContinueOnError)
 	fs.SetOutput(env.Stderr)
@@ -82,15 +83,29 @@ func List(ctx context.Context, env Env, args []string) error {
 				return err
 			}
 
-		case ui.ActionGrab:
-			// Picking an issue is what `enzo start` does, on the issue that
-			// is already in hand — no second lookup needed.
-			issue := res.Issue
-			return runStart(ctx, env, root, client, login, slug, startRequest{issue: &issue})
+		case ui.ActionChoose:
+			// Enter shows the issue and comes back to the list. It does not
+			// start work on it: branching and pushing is too much to hang off
+			// the key that moves around a list, so starting stayed in `enzo
+			// start`. See docs/decisions/0007-enter-opens-the-issue.md.
+			openIssue(env, res.Issue)
 
 		default:
 			return nil
 		}
+	}
+}
+
+// openIssue shows an issue in the browser. Like the log, a browser that will
+// not open is a warning and not a failed command: the URL is printed so the
+// issue is still reachable, and the list carries on.
+func openIssue(env Env, iss ghclient.Issue) {
+	if env.OpenURL == nil {
+		fmt.Fprintln(env.Stderr, iss.URL)
+		return
+	}
+	if err := env.OpenURL(iss.URL); err != nil {
+		fmt.Fprintf(env.Stderr, "enzo: could not open a browser: %v\n%s\n", err, iss.URL)
 	}
 }
 

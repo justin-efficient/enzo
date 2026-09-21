@@ -176,7 +176,7 @@ func TestNewSubPicksParentInteractively(t *testing.T) {
 		{ID: 100, Number: 1, Title: "candidate one"},
 		{ID: 200, Number: 2, Title: "candidate two"},
 	}
-	h.pickedParent = ui.Result{Action: ui.ActionGrab, Issue: ghclient.Issue{ID: 200, Number: 2, Title: "candidate two"}}
+	h.pickedParent = ui.Result{Action: ui.ActionChoose, Issue: ghclient.Issue{ID: 200, Number: 2, Title: "candidate two"}}
 
 	if err := New(context.Background(), h.env, []string{"sub"}); err != nil {
 		t.Fatalf("New sub: %v", err)
@@ -393,7 +393,7 @@ func TestNewSubPositionalTitle(t *testing.T) {
 	h := newReady(t)
 	h.env.Interactive = true
 	h.client.openIssues = []ghclient.Issue{{ID: 100, Number: 1, Title: "a parent"}}
-	h.pickedParent = ui.Result{Action: ui.ActionGrab, Issue: ghclient.Issue{ID: 100, Number: 1}}
+	h.pickedParent = ui.Result{Action: ui.ActionChoose, Issue: ghclient.Issue{ID: 100, Number: 1}}
 
 	if err := New(context.Background(), h.env, []string{"sub", "my new sub issue work"}); err != nil {
 		t.Fatalf("New sub: %v", err)

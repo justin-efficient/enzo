@@ -68,11 +68,11 @@ func TestCtrlNOnEmptyList(t *testing.T) {
 	}
 }
 
-// Enter still grabs; ctrl+n is the only way to get a sub-issue.
-func TestEnterStillGrabs(t *testing.T) {
+// Enter still just chooses the row; ctrl+n is the only way to get a sub-issue.
+func TestEnterStillChooses(t *testing.T) {
 	m := send(t, NewPicker("o/r", sampleIssues(3), PlainStyles()), "down", "enter")
-	if got := m.Result().Action; got != ActionGrab {
-		t.Errorf("Action = %v, want ActionGrab", got)
+	if got := m.Result().Action; got != ActionChoose {
+		t.Errorf("Action = %v, want ActionChoose", got)
 	}
 }
 
@@ -105,7 +105,7 @@ func TestCtrlNIgnoredInParentPicker(t *testing.T) {
 
 func TestHelpLineMentionsCtrlN(t *testing.T) {
 	out := NewPicker("o/r", sampleIssues(2), PlainStyles()).View().Content
-	if !strings.Contains(out, "ctrl+n sub-issue") {
+	if !strings.Contains(out, "ctrl+n new sub-issue") {
 		t.Errorf("the list help should name ctrl+n:\n%s", out)
 	}
 

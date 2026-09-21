@@ -11,6 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"golang.org/x/term"
 
+	"github.com/justin-efficient/enzo/internal/browser"
 	"github.com/justin-efficient/enzo/internal/cli"
 	"github.com/justin-efficient/enzo/internal/eventlog"
 	"github.com/justin-efficient/enzo/internal/ghclient"
@@ -49,6 +50,7 @@ func main() {
 		PickParent: pickParent,
 		AskDraft:   askDraft,
 		Await:      await,
+		OpenURL:    browser.Open,
 		Log:        eventlog.Append,
 	}
 

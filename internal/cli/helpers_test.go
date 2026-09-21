@@ -272,6 +272,11 @@ type harness struct {
 	// awaitGivesUp stops the fake polling, standing in for a timeout.
 	awaitGivesUp bool
 
+	// opened collects the URLs enzo asked a browser to show, and openErr
+	// stands in for a machine with no browser to show them.
+	opened  []string
+	openErr error
+
 	// drafted is what the issue form returns.
 	drafted       ui.Draft
 	draftErr      error
@@ -378,6 +383,10 @@ func newHarness(t *testing.T, remote string) *harness {
 				}
 			}
 			return nil
+		},
+		OpenURL: func(url string) error {
+			h.opened = append(h.opened, url)
+			return h.openErr
 		},
 		Log: func(path string, e eventlog.Entry) error {
 			h.logPath = path

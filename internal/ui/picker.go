@@ -18,14 +18,17 @@ const (
 	ActionCancel Action = iota
 	// ActionNew means the user picked the "new issue" row.
 	ActionNew
-	// ActionGrab means the user picked an existing issue.
-	ActionGrab
+	// ActionChoose means the user picked an existing issue. What that means
+	// is the caller's business: `enzo list` opens it in a browser, `enzo new
+	// sub` makes it the parent.
+	ActionChoose
 	// ActionNewSub means the user asked for a sub-issue of the highlighted
 	// issue, which Result.Issue carries.
 	ActionNewSub
 )
 
-// Result is the picker's outcome. Issue is only meaningful for ActionGrab.
+// Result is the picker's outcome. Issue is only meaningful for ActionChoose
+// and ActionNewSub.
 type Result struct {
 	Action Action
 	Issue  ghclient.Issue
@@ -47,6 +50,9 @@ type Picker struct {
 	newRow bool
 	// newSub allows ctrl+n to open a sub-issue of the highlighted row.
 	newSub bool
+	// enterVerb is what the help line says enter does, which differs between
+	// the two pickers: `enzo list` shows the issue, `enzo new sub` chooses it.
+	enterVerb string
 
 	cursor  int // 0 is the "new" row; issue i is at cursor i+1
 	offset  int // first visible issue index, for scrolling
@@ -68,6 +74,10 @@ func NewPicker(repo string, issues []ghclient.Issue, styles Styles) Picker {
 		heading: "open issues assigned to you in " + repo,
 		newRow:  true,
 		newSub:  true,
+		// Enter shows the issue. It does not start work on it: branching and
+		// pushing is too much to hang off the key that moves around a list.
+		// See docs/decisions/0007-enter-opens-the-issue.md.
+		enterVerb: "open in browser",
 	}
 }
 
@@ -75,11 +85,12 @@ func NewPicker(repo string, issues []ghclient.Issue, styles Styles) Picker {
 // has no "new" row: you are choosing among issues that already exist.
 func NewParentPicker(repo string, issues []ghclient.Issue, styles Styles) Picker {
 	return Picker{
-		repo:    repo,
-		nodes:   ghclient.Arrange(repo, issues),
-		styles:  styles,
-		visible: defaultVisible,
-		heading: "choose a parent issue in " + repo,
+		repo:      repo,
+		nodes:     ghclient.Arrange(repo, issues),
+		styles:    styles,
+		visible:   defaultVisible,
+		heading:   "choose a parent issue in " + repo,
+		enterVerb: "select",
 	}
 }
 
@@ -180,7 +191,7 @@ func (m Picker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.result = Result{Action: ActionNew}
 			} else {
-				m.result = Result{Action: ActionGrab, Issue: iss}
+				m.result = Result{Action: ActionChoose, Issue: iss}
 			}
 			m.done = true
 			return m, tea.Quit
@@ -259,9 +270,9 @@ func (m Picker) View() tea.View {
 // string is built; `enzo --version`, the usage text and the commit `enzo
 // start` writes all use the same call.
 func (m Picker) helpLine() string {
-	keys := "↑/↓ move · enter select · esc cancel"
+	keys := "↑/↓ move · enter " + m.enterVerb + " · esc cancel"
 	if m.newSub {
-		keys = "↑/↓ move · enter select · ctrl+n sub-issue · esc cancel"
+		keys = "↑/↓ move · enter " + m.enterVerb + " · ctrl+n new sub-issue · esc cancel"
 	}
 	return version.Banner() + " · " + keys
 }

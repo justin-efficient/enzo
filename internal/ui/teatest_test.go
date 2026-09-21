@@ -45,8 +45,8 @@ func TestPickerProgramSelectsIssue(t *testing.T) {
 		t.Fatal("final model is not a Picker")
 	}
 	res := final.Result()
-	if res.Action != ActionGrab {
-		t.Fatalf("Action = %v, want ActionGrab", res.Action)
+	if res.Action != ActionChoose {
+		t.Fatalf("Action = %v, want ActionChoose", res.Action)
 	}
 	if res.Issue.Number != 34 {
 		t.Errorf("selected #%d, want #34", res.Issue.Number)

@@ -249,7 +249,7 @@ func resolveParent(ctx context.Context, env Env, client ghclient.Client, slug gi
 	if err != nil {
 		return nil, err
 	}
-	if res.Action != ui.ActionGrab {
+	if res.Action != ui.ActionChoose {
 		return nil, ErrCanceled
 	}
 	return &res.Issue, nil

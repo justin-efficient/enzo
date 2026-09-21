@@ -52,6 +52,9 @@ type Env struct {
 	// Await shows a spinner while poll is retried, until it reports true.
 	Await func(message string, poll func() (bool, error)) error
 
+	// OpenURL shows a URL in the user's browser. Tests swap in a recorder.
+	OpenURL func(url string) error
+
 	// Log records something enzo created. It is given the configured log path
 	// and must not fail the command it is reporting on.
 	Log func(path string, e eventlog.Entry) error
@@ -104,7 +107,8 @@ const usageBody = ` — issue lifecycle for GitHub
 
 usage:
   enzo setup            store the token enzo uses for this repo
-  enzo list             pick from the open issues assigned to you
+  enzo list             browse the open issues assigned to you,
+                        opening the one you pick in a browser
   enzo new ["title"]    open an issue assigned to you
   enzo new sub [n] ["title"]
                         open it as a sub-issue of #n, or pick a parent

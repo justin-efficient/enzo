@@ -81,8 +81,8 @@ func TestEnterOnNewRow(t *testing.T) {
 func TestEnterOnIssue(t *testing.T) {
 	m := send(t, NewPicker("o/r", sampleIssues(3), PlainStyles()), "down", "down", "enter")
 	res := m.Result()
-	if res.Action != ActionGrab {
-		t.Fatalf("Action = %v, want ActionGrab", res.Action)
+	if res.Action != ActionChoose {
+		t.Fatalf("Action = %v, want ActionChoose", res.Action)
 	}
 	if res.Issue.Number != 2 {
 		t.Errorf("selected issue #%d, want #2", res.Issue.Number)

@@ -40,8 +40,8 @@ func TestParentPickerStartsOnFirstIssue(t *testing.T) {
 func TestParentPickerEnterSelectsIssue(t *testing.T) {
 	m := send(t, NewParentPicker("o/r", parentCandidates(), PlainStyles()), "down", "enter")
 	res := m.Result()
-	if res.Action != ActionGrab {
-		t.Fatalf("Action = %v, want ActionGrab", res.Action)
+	if res.Action != ActionChoose {
+		t.Fatalf("Action = %v, want ActionChoose", res.Action)
 	}
 	if res.Issue.Number != 2 {
 		t.Errorf("selected #%d, want #2", res.Issue.Number)
@@ -56,8 +56,8 @@ func TestParentPickerEnterSelectsIssue(t *testing.T) {
 func TestParentPickerFirstRowIsAnIssue(t *testing.T) {
 	m := send(t, NewParentPicker("o/r", parentCandidates(), PlainStyles()), "enter")
 	res := m.Result()
-	if res.Action != ActionGrab {
-		t.Fatalf("Action = %v, want ActionGrab", res.Action)
+	if res.Action != ActionChoose {
+		t.Fatalf("Action = %v, want ActionChoose", res.Action)
 	}
 	if res.Issue.Number != 1 {
 		t.Errorf("selected #%d, want #1", res.Issue.Number)

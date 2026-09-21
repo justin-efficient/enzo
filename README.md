@@ -11,7 +11,7 @@ A tiny, opinionated CLI for GitHub that makes issue & PR management simpler for 
 | command | status | what it does |
 | --- | --- | --- |
 | `enzo setup` | **done** | create the `.enzo` file with the token used to reach this repo |
-| `enzo list` | **done** | list the open issues assigned to me in current repo — selecting one starts it, the top option is "new", `ctrl+n` opens a sub-issue of the highlighted one, esc cancels |
+| `enzo list` | **done** | list the open issues assigned to me in current repo — selecting one opens it in a browser, the top option is "new", `ctrl+n` opens a sub-issue of the highlighted one, esc cancels |
 | `enzo new [sub] "title" | **done** | create an new issue, or sub issue of current and assign to me |
 | `enzo start [issue-number] ["title"]` | **done** | calls `enzo new` if the issue doesn't exist. Then branch off `main`, push, and create a linked draft PR with no reviewers (if the PR doesn't exist). Then switch to that local branch.
 | `enzo finish` | **done** | take the PR out of draft, check it can merge — mergeable, review, its own checks, and the base branch's build — then merge it |
@@ -85,7 +85,7 @@ composes in pipes and scripts.
 | key | in the picker |
 | --- | --- |
 | ↑ / ↓ | move |
-| enter | start the highlighted issue, or open the form on the "new issue" row |
+| enter | show the highlighted issue in your browser, then come back to the list — on the "new issue" row, open the form |
 | `ctrl+n` | open a sub-issue of the highlighted issue — a top-level issue on the "new issue" row |
 | esc | cancel |
 
@@ -97,14 +97,18 @@ open issues assigned to you in justin-efficient/enzo
   #1 implement enzo start
     #5 sub-issue created by enzo new
 
-🚘 enzo v0.2.0 · ↑/↓ move · enter select · ctrl+n sub-issue · esc cancel
+🚘 enzo v0.2.0 · ↑/↓ move · enter open in browser · ctrl+n new sub-issue · esc cancel
 ```
 
 Sub-issues are nested under their parent, two spaces per level. An issue whose
 parent is not in the list — not assigned to you, closed, or in another
 repository — stays at the top level.
 
-Picking an issue runs `enzo start` on it.
+The list starts nothing. To work on an issue, run `enzo start <n>`.
+
+The browser is `open` on macOS, `rundll32` on Windows and `xdg-open` elsewhere,
+so `$BROWSER` and your desktop default are honoured. If none of them will run,
+enzo prints the URL and the list carries on.
 
 ## Starting work
 
@@ -266,6 +270,7 @@ make dist     # static linux/amd64 and linux/arm64 binaries in dist/
 
 - `internal/config` — the `.enzo` file and token resolution
 - `internal/gitrepo` — repo root, origin remote parsing, branch, fetch and push
+- `internal/browser` — opening a URL on macOS, Windows and everything else
 - `internal/ghclient` — the GitHub surface enzo uses, behind a `Client` interface
 - `internal/ui` — the bubbletea models (issue picker, token prompt)
 - `internal/cli` — command dispatch; everything external arrives through `cli.Env`

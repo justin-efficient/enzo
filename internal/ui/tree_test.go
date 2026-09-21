@@ -136,8 +136,8 @@ func TestPickerSelectionFollowsTreeOrder(t *testing.T) {
 		}
 		after := send(t, m, append(down, "enter")...)
 		res := after.Result()
-		if res.Action != ActionGrab {
-			t.Fatalf("%d downs then enter: Action = %v, want ActionGrab", i+1, res.Action)
+		if res.Action != ActionChoose {
+			t.Fatalf("%d downs then enter: Action = %v, want ActionChoose", i+1, res.Action)
 		}
 		if res.Issue.Number != want {
 			t.Errorf("%d downs selected #%d, want #%d", i+1, res.Issue.Number, want)

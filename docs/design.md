@@ -95,6 +95,20 @@ keep printing the old number after a bump.
 
 ## Listing
 
+Enter opens the highlighted issue in a browser and comes back to the list. It
+used to run `enzo start`, which branches, commits, pushes and drafts a pull
+request — five changes from the key you press to stop moving around a list.
+Nothing in the picker starts work now; `enzo start <n>` is the only way in. See
+[decision 0007](decisions/0007-enter-opens-the-issue.md).
+
+Because opening is not terminal, the picker loop re-reads the issues afterwards,
+the same as it does after creating one. A browser that will not open is a
+warning with the URL in it, never a failed command.
+
+The parent picker `enzo new sub` shows keeps enter as "select": it is a chooser,
+and choosing is all it does. That is why the help line's enter verb is a field
+on the picker rather than a constant.
+
 Nesting in `enzo list` comes from the listing itself, so it costs no extra API
 calls. An issue whose parent is not in the list — not assigned to you, closed,
 or in another repository — stays at the top level rather than disappearing.
