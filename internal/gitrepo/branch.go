@@ -139,10 +139,24 @@ func Unpushed(dir, remote, branch, base string) (int, error) {
 // DirtyFiles lists the paths with uncommitted changes, staged or not,
 // including files git does not track.
 func DirtyFiles(dir string) ([]string, error) {
+	return status(dir, "normal")
+}
+
+// DirtyTrackedFiles lists the same, minus the files git does not track. It is
+// what a check about "work that is not in the pull request" wants: an
+// untracked file may be a scratch note or a build artefact nobody asked git
+// about, and refusing on one would make the check cry wolf.
+func DirtyTrackedFiles(dir string) ([]string, error) {
+	return status(dir, "no")
+}
+
+// status runs `git status --porcelain` and returns the paths it names.
+// untracked is git's --untracked-files mode.
+func status(dir, untracked string) ([]string, error) {
 	// Untrimmed: `git status --porcelain` puts two status columns before each
 	// path, and the first is a space for a change that is not staged. Trimming
 	// the output would eat it and take a character off the first path.
-	out, err := output(dir, "status", "--porcelain")
+	out, err := output(dir, "status", "--porcelain", "--untracked-files="+untracked)
 	if err != nil {
 		return nil, err
 	}

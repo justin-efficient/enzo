@@ -169,9 +169,12 @@ be true — a draft reports its merge state and its review decision differently 
 so the alternative was a complete report or an untouched pull request, and the
 complete report won.
 
-Untracked files count. A file you never added is the case most worth catching —
-the pull request merges without it — and it is the same rule `enzo abort`
-already uses when it warns about what will move to the default branch.
+Untracked files do not count. A scratch note or a build artefact nobody told
+git about is not work the pull request is missing, and refusing on one would
+make the check cry wolf in any repository with an untidy worktree. `enzo abort`
+keeps the wider reading — `gitrepo.DirtyFiles` rather than
+`DirtyTrackedFiles` — because an untracked file does move to the default branch
+when the branch goes away, so it is worth warning about there.
 
 **Every check row opens with ✅ or ❌**, and the mark means only "this check is
 satisfied". `enzo finish` is the only command that marks its rows: the others
@@ -180,6 +183,10 @@ tick beside them would say nothing. The marks live in `internal/cli/output.go`
 with the headline emoji, and `markNone` is the two-space blank an unmarked row
 gets inside a marked block — both marks are two columns wide, which a test
 pins, or every marked block would skew.
+
+`mergeable` reports last, because it is GitHub's verdict on everything above
+it: the rows before it are the reasons, and it is the answer. It used to sit
+second, which read as though the rest were footnotes to it.
 
 The base branch row is the one that can be crossed without blocking: **reported,
 not enforced**. A red `main` is worth seeing

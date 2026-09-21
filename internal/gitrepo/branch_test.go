@@ -312,3 +312,48 @@ func TestDirtyFiles(t *testing.T) {
 		t.Errorf("DirtyFiles = %v, want [new.txt]", got)
 	}
 }
+
+// DirtyTrackedFiles is the same reading with the untracked files left out.
+func TestDirtyTrackedFiles(t *testing.T) {
+	dir := initRepo(t, "")
+
+	// A file git was never told about is not a tracked change.
+	if err := os.WriteFile(filepath.Join(dir, "scratch.txt"), []byte("hi"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := DirtyTrackedFiles(dir)
+	if err != nil {
+		t.Fatalf("DirtyTrackedFiles: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("DirtyTrackedFiles = %v, want nothing for an untracked file", got)
+	}
+	// DirtyFiles still sees it, which is what `enzo abort` warns about.
+	if all, err := DirtyFiles(dir); err != nil || len(all) != 1 {
+		t.Errorf("DirtyFiles = %v (err %v), want [scratch.txt]", all, err)
+	}
+
+	// Once git tracks it, an edit counts.
+	gitOut(t, dir, "add", "scratch.txt")
+	gitOut(t, dir, "commit", "-q", "-m", "add scratch.txt")
+	if err := os.WriteFile(filepath.Join(dir, "scratch.txt"), []byte("changed"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err = DirtyTrackedFiles(dir)
+	if err != nil {
+		t.Fatalf("DirtyTrackedFiles: %v", err)
+	}
+	if len(got) != 1 || got[0] != "scratch.txt" {
+		t.Errorf("DirtyTrackedFiles = %v, want [scratch.txt]", got)
+	}
+
+	// Staged but uncommitted counts too.
+	gitOut(t, dir, "add", "scratch.txt")
+	got, err = DirtyTrackedFiles(dir)
+	if err != nil {
+		t.Fatalf("DirtyTrackedFiles: %v", err)
+	}
+	if len(got) != 1 || got[0] != "scratch.txt" {
+		t.Errorf("staged change: DirtyTrackedFiles = %v, want [scratch.txt]", got)
+	}
+}

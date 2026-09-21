@@ -70,6 +70,21 @@ func TestFinishUndraftsThenMerges(t *testing.T) {
 		}
 	}
 
+	// The rows read in order, with mergeable last: the rows above it are the
+	// reasons, and it is GitHub's answer.
+	wantOrder := []string{"changes:", "undrafted:", "review:", "checks:", "main:", "mergeable:", "merged:"}
+	at := -1
+	for _, verb := range wantOrder {
+		i := strings.Index(out, verb)
+		if i < 0 {
+			t.Fatalf("output is missing %q:\n%s", verb, out)
+		}
+		if i < at {
+			t.Errorf("%q comes out of order:\n%s", verb, out)
+		}
+		at = i
+	}
+
 	e := h.findLogged(t, "merged")
 	if !strings.Contains(e.Text, "#77") || !strings.Contains(e.Text, "#12") {
 		t.Errorf("logged %q, want both numbers", e.Text)
@@ -80,9 +95,7 @@ func TestFinishUndraftsThenMerges(t *testing.T) {
 // one run names every reason rather than one reason at a time.
 func TestFinishRefusesADirtyWorktree(t *testing.T) {
 	h := finishReady(t)
-	if err := os.WriteFile(filepath.Join(h.root, "tracked.txt"), []byte("half done\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	dirtyTracked(t, h, "tracked.txt")
 
 	requireErrorContains(t, Finish(context.Background(), h.env, nil), "commit or stash")
 
@@ -109,9 +122,7 @@ func TestFinishRefusesADirtyWorktree(t *testing.T) {
 // Every reason is named in one go, dirty worktree included.
 func TestFinishNamesEveryBlockerAtOnce(t *testing.T) {
 	h := finishReady(t)
-	if err := os.WriteFile(filepath.Join(h.root, "tracked.txt"), []byte("half done\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	dirtyTracked(t, h, "tracked.txt")
 	h.client.readiness.Checks = "FAILURE"
 	h.client.readiness.Failed = []string{"dist"}
 
@@ -124,17 +135,38 @@ func TestFinishNamesEveryBlockerAtOnce(t *testing.T) {
 	}
 }
 
-// A file that was never added is the dangerous case: the pull request merges
-// without it. It counts as a change.
-func TestFinishRefusesAnUntrackedFile(t *testing.T) {
+// A file git was never told about is not work the pull request is missing —
+// a scratch note, a build artefact — so it does not stand in the way.
+func TestFinishIgnoresUntrackedFiles(t *testing.T) {
 	h := finishReady(t)
-	if err := os.WriteFile(filepath.Join(h.root, "forgotten.go"), []byte("package x\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(h.root, "scratch.txt"), []byte("notes\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	requireErrorContains(t, Finish(context.Background(), h.env, nil), "commit or stash")
-	if !strings.Contains(h.out(), markFail+" changes:   1 file uncommitted: forgotten.go") {
-		t.Errorf("output should cross the row and name the untracked file:\n%s", h.out())
+	if err := Finish(context.Background(), h.env, nil); err != nil {
+		t.Fatalf("Finish: %v", err)
+	}
+	if h.client.mergeCalls != 1 {
+		t.Errorf("merged in %d calls, want 1 — an untracked file must not block", h.client.mergeCalls)
+	}
+	if !strings.Contains(h.out(), markPass+" changes:   none, the worktree is clean") {
+		t.Errorf("an untracked file should leave the worktree clean:\n%s", h.out())
+	}
+}
+
+// dirtyTracked commits a file and then edits it, leaving an uncommitted change
+// to something git knows about. The harness repo has only empty commits in it,
+// so there is nothing tracked to dirty otherwise.
+func dirtyTracked(t *testing.T, h *harness, name string) {
+	t.Helper()
+	path := filepath.Join(h.root, name)
+	if err := os.WriteFile(path, []byte("first\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mustGit(t, h.root, "add", name)
+	mustGit(t, h.root, "commit", "-q", "-m", "add "+name)
+	if err := os.WriteFile(path, []byte("edited\n"), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }
 

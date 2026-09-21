@@ -54,11 +54,14 @@ func Finish(ctx context.Context, env Env, args []string) error {
 
 	headline(env.Stdout, emojiFinish, "finishing Issue #%d %q", number, pr.Title)
 
-	// 1. The worktree. Uncommitted work is not in the pull request, so
-	// merging would ship something other than what you have. It reports and
-	// joins the blockers like every other check, rather than cutting the run
-	// short: one run names everything that is wrong.
-	dirty, err := gitrepo.DirtyFiles(root)
+	// 1. The worktree. Uncommitted work on a tracked file is not in the pull
+	// request, so merging would ship something other than what you have. It
+	// reports and joins the blockers like every other check, rather than
+	// cutting the run short: one run names everything that is wrong.
+	//
+	// Untracked files are left out: a scratch file or a build artefact nobody
+	// told git about is not work the pull request is missing.
+	dirty, err := gitrepo.DirtyTrackedFiles(root)
 	if err != nil {
 		return err
 	}
@@ -127,11 +130,52 @@ func describeDirty(paths []string) string {
 // merge. Every check reports, whether or not it passed, so the output is the
 // same shape either way and a run that refuses says why on every count.
 func assess(r ghclient.Readiness) (checked []row, blockers []string) {
-	// 3. Can it merge at all?
+	// 3. Is review satisfied? An empty decision means the repository asks for
+	// none, which is not the same as having been approved.
+	switch r.ReviewDecision {
+	case "":
+		checked = append(checked, row{markPass, "review", "not required here"})
+	case "APPROVED":
+		checked = append(checked, row{markPass, "review", "approved"})
+	case "CHANGES_REQUESTED":
+		checked = append(checked, row{markFail, "review", "changes requested"})
+		blockers = append(blockers, "a reviewer asked for changes")
+	default:
+		checked = append(checked, row{markFail, "review", "required — " + describeReviewers(r.Reviewers)})
+		blockers = append(blockers, "review is required and has not been given")
+	}
+
+	// 4. The pull request's own checks. Still running counts against it: the
+	// merge cannot go ahead on a check that has not answered yet.
+	passing := r.Checks == "" || r.Checks == "SUCCESS"
+	checked = append(checked, row{mark(passing), "checks", describeChecks(r)})
+	switch r.Checks {
+	case "", "SUCCESS":
+	case "PENDING", "EXPECTED":
+		blockers = append(blockers, "checks are still running")
+	default:
+		blockers = append(blockers, "checks failed")
+	}
+
+	// 5. The base branch's own build, which is not a blocker: a broken main is
+	// a reason to know, not a reason your work cannot land on it.
+	base := r.BaseBranch
+	if base == "" {
+		base = "base"
+	}
+	// A cross here means the base build is red, not that your work is stuck:
+	// this row adds nothing to blockers. A base still building is not red.
+	baseRed := base != "" && r.BaseChecks != "" && r.BaseChecks != "SUCCESS" &&
+		r.BaseChecks != "PENDING" && r.BaseChecks != "EXPECTED"
+	checked = append(checked, row{mark(!baseRed), base, describeBase(r)})
+
+	// 6. Can it merge at all? Last, because it is GitHub's verdict on
+	// everything above: the rows before it are the reasons, this is the
+	// answer.
 	switch r.Mergeable {
 	case "MERGEABLE":
 		// BLOCKED is GitHub's way of saying a rule is unsatisfied without
-		// saying which; the review and check rows below usually name it, and
+		// saying which; the review and check rows above usually name it, and
 		// this catches the case where neither does.
 		blocked := r.MergeState == "BLOCKED" || r.MergeState == "BEHIND"
 		checked = append(checked, row{mark(!blocked), "mergeable", describeMergeState(r.MergeState)})
@@ -151,44 +195,6 @@ func assess(r ghclient.Readiness) (checked []row, blockers []string) {
 		blockers = append(blockers, "GitHub has not finished working out whether it merges; try again shortly")
 	}
 
-	// 4. Is review satisfied? An empty decision means the repository asks for
-	// none, which is not the same as having been approved.
-	switch r.ReviewDecision {
-	case "":
-		checked = append(checked, row{markPass, "review", "not required here"})
-	case "APPROVED":
-		checked = append(checked, row{markPass, "review", "approved"})
-	case "CHANGES_REQUESTED":
-		checked = append(checked, row{markFail, "review", "changes requested"})
-		blockers = append(blockers, "a reviewer asked for changes")
-	default:
-		checked = append(checked, row{markFail, "review", "required — " + describeReviewers(r.Reviewers)})
-		blockers = append(blockers, "review is required and has not been given")
-	}
-
-	// 5. The pull request's own checks. Still running counts against it: the
-	// merge cannot go ahead on a check that has not answered yet.
-	passing := r.Checks == "" || r.Checks == "SUCCESS"
-	checked = append(checked, row{mark(passing), "checks", describeChecks(r)})
-	switch r.Checks {
-	case "", "SUCCESS":
-	case "PENDING", "EXPECTED":
-		blockers = append(blockers, "checks are still running")
-	default:
-		blockers = append(blockers, "checks failed")
-	}
-
-	// 6. The base branch's own build, which is not a blocker: a broken main is
-	// a reason to know, not a reason your work cannot land on it.
-	base := r.BaseBranch
-	if base == "" {
-		base = "base"
-	}
-	// A cross here means the base build is red, not that your work is stuck:
-	// this row adds nothing to blockers. A base still building is not red.
-	baseRed := base != "" && r.BaseChecks != "" && r.BaseChecks != "SUCCESS" &&
-		r.BaseChecks != "PENDING" && r.BaseChecks != "EXPECTED"
-	checked = append(checked, row{mark(!baseRed), base, describeBase(r)})
 	return checked, blockers
 }
 
