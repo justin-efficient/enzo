@@ -9,7 +9,7 @@ import "fmt"
 // The value here is the source of truth. A build from a git tag overrides it
 // with -ldflags "-X github.com/justin-efficient/enzo/internal/version.Version=..."
 // so a tagged binary names its tag; see the Makefile.
-var Version = "0.2.0"
+var Version = "0.5.0"
 
 // Banner is how enzo names itself and its version — in `enzo --version`, at the
 // top of the usage text, and under the issue list.
