@@ -172,7 +172,7 @@ draft, checks everything between it and the base branch, and merges it. Like
 ```
 $ enzo finish
 🏁 finishing Issue #12 "fix the thing"
-   ✅ changes:   none, the worktree is clean
+   ✅ changes:   worktree is clean
    ✅ undrafted: PR #77
    ✅ review:    not required here
    ✅ checks:    all passed

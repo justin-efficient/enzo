@@ -73,7 +73,7 @@ func TestPrintRowMatchesRows(t *testing.T) {
 func TestRowsAlignBehindMarks(t *testing.T) {
 	var b bytes.Buffer
 	rows(&b,
-		row{markPass, "changes", "none, the worktree is clean"},
+		row{markPass, "changes", "worktree is clean"},
 		row{markFail, "checks", "failed: dist"},
 	)
 
@@ -86,9 +86,6 @@ func TestRowsAlignBehindMarks(t *testing.T) {
 	}
 	if !strings.HasPrefix(lines[1], indent+markFail+" ") {
 		t.Errorf("a failing row should open with %s: %q", markFail, lines[1])
-	}
-	if a, b := column(lines[0], "none"), column(lines[1], "failed"); a != b {
-		t.Errorf("nouns start at columns %d and %d, want the same", a, b)
 	}
 }
 

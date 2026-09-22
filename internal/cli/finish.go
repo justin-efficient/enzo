@@ -112,7 +112,7 @@ func Finish(ctx context.Context, env Env, args []string) error {
 // row.
 func describeDirty(paths []string) string {
 	if len(paths) == 0 {
-		return "none, the worktree is clean"
+		return "worktree is clean"
 	}
 	const most = 3
 	shown := paths

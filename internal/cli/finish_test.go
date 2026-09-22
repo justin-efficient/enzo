@@ -57,7 +57,7 @@ func TestFinishUndraftsThenMerges(t *testing.T) {
 	out := h.out()
 	for _, want := range []string{
 		`finishing Issue #12 "fix the thing"`,
-		markPass + " changes:   none, the worktree is clean",
+		markPass + " changes:   worktree is clean",
 		markPass + " undrafted: PR #77",
 		markPass + " mergeable: yes, clean",
 		markPass + " review:    not required here",
@@ -149,7 +149,7 @@ func TestFinishIgnoresUntrackedFiles(t *testing.T) {
 	if h.client.mergeCalls != 1 {
 		t.Errorf("merged in %d calls, want 1 — an untracked file must not block", h.client.mergeCalls)
 	}
-	if !strings.Contains(h.out(), markPass+" changes:   none, the worktree is clean") {
+	if !strings.Contains(h.out(), markPass+" changes:   worktree is clean") {
 		t.Errorf("an untracked file should leave the worktree clean:\n%s", h.out())
 	}
 }
