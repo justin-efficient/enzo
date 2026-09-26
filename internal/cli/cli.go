@@ -103,7 +103,7 @@ func signedBody(body string) string {
 // built rather than declared so the banner carries the running version.
 func Usage() string { return version.Banner() + usageBody }
 
-const usageBody = ` — issue lifecycle for GitHub
+const usageBody = ` — opinionated issue and PR management for GitHub
 
 usage:
   enzo setup            store the token enzo uses for this repo
@@ -118,6 +118,8 @@ usage:
   enzo abort            close the PR and delete the branch you are on
   enzo finish           undraft, check, and merge the PR you are on
   enzo help             show this message
+
+Vibe coded with 💛 by the System Software Team
 `
 
 // Run dispatches a command. args excludes the program name.
