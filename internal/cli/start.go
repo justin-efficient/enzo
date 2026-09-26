@@ -177,8 +177,10 @@ func startIssue(ctx context.Context, env Env, root string, client ghclient.Clien
 //
 // A new branch starts from the base — origin's default branch — and not from
 // whatever you happened to be standing on, so work for one issue never arrives
-// carrying work for another. A branch that already exists is switched to as it
-// is; enzo does not move other people's branches around.
+// carrying work for another. A branch that already exists locally is switched
+// to as it is; one that exists only on the remote is fetched and tracked
+// instead of being cut fresh from base, so its commits come along rather than
+// being diverged from. enzo does not move other people's branches around.
 //
 // Uncommitted work comes along, the same as a hand-typed `git switch`. When it
 // cannot be carried, git refuses and enzo stops there, still on the branch you
@@ -193,6 +195,9 @@ func checkout(root, branch, baseRev string) (created bool, err error) {
 	}
 	if gitrepo.BranchExists(root, branch) {
 		return false, gitrepo.Switch(root, branch)
+	}
+	if gitrepo.RemoteBranchExists(root, "origin", branch) {
+		return false, gitrepo.FetchAndTrackBranch(root, "origin", branch)
 	}
 	if baseRev == "" {
 		// Nothing to start from; `git switch -c` off HEAD is still better

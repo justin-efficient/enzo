@@ -120,6 +120,22 @@ func RemoteBranchExists(dir, remote, branch string) bool {
 	return err == nil && strings.TrimSpace(out) != ""
 }
 
+// FetchAndTrackBranch brings a branch that exists on remote but not yet
+// locally onto disk: it fetches the branch's tip into the remote-tracking ref
+// and switches to a new local branch of the same name that tracks it.
+//
+// This is what picking a branch back up needs — the commits already on it
+// come along, and later pushes and comparisons know where they belong —
+// rather than CreateBranch cutting a fresh branch from base that diverges
+// from what is already on the remote.
+func FetchAndTrackBranch(dir, remote, branch string) error {
+	trackingRef := "refs/remotes/" + remote + "/" + branch
+	if err := do(dir, "fetch", remote, "+refs/heads/"+branch+":"+trackingRef); err != nil {
+		return err
+	}
+	return do(dir, "switch", "-c", branch, "--track", remote+"/"+branch)
+}
+
 // Unpushed counts the commits on branch that remote does not have.
 //
 // When the remote knows the branch, that is everything past its remote tip,

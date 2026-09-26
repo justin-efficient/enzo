@@ -241,6 +241,39 @@ func TestStartDoesNotRebaseAnExistingBranch(t *testing.T) {
 	}
 }
 
+// A branch that exists on the remote but not locally — started from another
+// machine, say — is picked up rather than being cut fresh from main, which
+// would diverge from the work already pushed.
+func TestStartFetchesAnExistingRemoteBranch(t *testing.T) {
+	h := startReady(t)
+	const branch = "justin-efficient/12-fix-the-thing"
+
+	// The branch exists on the remote, with real work on it, but there is no
+	// local ref for it at all — as if `enzo start` had run somewhere else.
+	mustGit(t, h.root, "switch", "-q", "-c", branch)
+	mustGit(t, h.root, "commit", "-q", "--allow-empty", "-m", "real work")
+	mustGit(t, h.root, "push", "-q", "origin", branch)
+	tip := mustGit(t, h.root, "rev-parse", "HEAD")
+	mustGit(t, h.root, "switch", "-q", "main")
+	mustGit(t, h.root, "branch", "-D", branch)
+
+	if err := Start(context.Background(), h.env, []string{"12"}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	if got := h.branch(t); got != branch {
+		t.Errorf("on branch %q, want %q", got, branch)
+	}
+	if got := mustGit(t, h.root, "rev-parse", "HEAD"); got != tip {
+		t.Errorf("branch tip = %s, want the work already on the remote at %s", got, tip)
+	}
+	// enzo did not create this branch, it linked up with the one on the
+	// remote, so the report should say so.
+	if !strings.Contains(h.out(), "switched to: "+branch) {
+		t.Errorf("output should say it switched to the branch:\n%s", h.out())
+	}
+}
+
 func TestStartOpensTheIssueWhenGivenATitle(t *testing.T) {
 	h := startReady(t)
 
