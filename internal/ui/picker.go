@@ -272,7 +272,7 @@ func (m Picker) View() tea.View {
 func (m Picker) helpLine() string {
 	keys := "↑/↓ move · enter " + m.enterVerb + " · esc cancel"
 	if m.newSub {
-		keys = "↑/↓ move · enter " + m.enterVerb + " · ctrl+n new sub-issue · esc cancel"
+		keys = "↑/↓ move · enter " + m.enterVerb + " · ctrl+n new sub-issue · esc quit"
 	}
 	return version.Banner() + " · " + keys
 }

@@ -161,7 +161,7 @@ func TestViewShowsRepoAndIssues(t *testing.T) {
 	}
 	out := NewPicker("justin-efficient/enzo", issues, PlainStyles()).View().Content
 
-	for _, want := range []string{"justin-efficient/enzo", "+ new issue", "#12", "fix the thing", "#34", "[bug]", "esc cancel"} {
+	for _, want := range []string{"justin-efficient/enzo", "+ new issue", "#12", "fix the thing", "#34", "[bug]", "esc quit"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("view is missing %q:\n%s", want, out)
 		}
@@ -186,7 +186,7 @@ func TestViewSignsTheHelpLine(t *testing.T) {
 				t.Errorf("view should sign the help line with %q:\n%s", want, out)
 			}
 			// The signature goes before the keys, not instead of them.
-			if i, j := strings.Index(out, version.Banner()), strings.Index(out, "esc cancel"); i < 0 || j < i {
+			if i, j := strings.Index(out, version.Banner()), strings.Index(out, "↑/↓ move"); i < 0 || j < i {
 				t.Errorf("the banner should come before the key hints:\n%s", out)
 			}
 		})
