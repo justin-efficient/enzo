@@ -46,8 +46,8 @@ type NewIssue struct {
 type Client interface {
 	// Viewer returns the login of the authenticated user.
 	Viewer(ctx context.Context) (string, error)
-	// AssignedIssues lists open issues in slug assigned to login, newest
-	// activity first. Pull requests are excluded.
+	// AssignedIssues lists open issues in slug assigned to login, oldest
+	// first. Pull requests are excluded.
 	AssignedIssues(ctx context.Context, slug gitrepo.Slug, login string) ([]Issue, error)
 	// OpenIssues lists every open issue in slug, newest activity first. Pull
 	// requests are excluded. It is what `enzo new sub` offers as parents.
@@ -124,22 +124,25 @@ func (a *API) Viewer(ctx context.Context) (string, error) {
 }
 
 // AssignedIssues lists open issues assigned to login, excluding pull requests.
+// Oldest first, so `enzo list` reads as a queue; Arrange keeps that order
+// among siblings.
 func (a *API) AssignedIssues(ctx context.Context, slug gitrepo.Slug, login string) ([]Issue, error) {
-	return a.listIssues(ctx, slug, login)
+	return a.listIssues(ctx, slug, login, "created", "asc")
 }
 
 // OpenIssues lists every open issue, excluding pull requests.
 func (a *API) OpenIssues(ctx context.Context, slug gitrepo.Slug) ([]Issue, error) {
-	return a.listIssues(ctx, slug, "")
+	return a.listIssues(ctx, slug, "", "updated", "desc")
 }
 
-// listIssues walks every page of open issues, optionally filtered by assignee.
-func (a *API) listIssues(ctx context.Context, slug gitrepo.Slug, assignee string) ([]Issue, error) {
+// listIssues walks every page of open issues, optionally filtered by assignee,
+// in the order sort and direction ask GitHub for.
+func (a *API) listIssues(ctx context.Context, slug gitrepo.Slug, assignee, sort, direction string) ([]Issue, error) {
 	opts := &github.IssueListByRepoOptions{
 		State:       "open",
 		Assignee:    assignee,
-		Sort:        "updated",
-		Direction:   "desc",
+		Sort:        sort,
+		Direction:   direction,
 		ListOptions: github.ListOptions{PerPage: 100},
 	}
 

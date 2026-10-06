@@ -11,7 +11,7 @@ A tiny, opinionated CLI for GitHub that makes issue & PR management simpler for 
 | command | status | what it does |
 | --- | --- | --- |
 | `enzo setup` | **done** | create the `.enzo` file with the token used to reach this repo |
-| `enzo list` | **done** | list the open issues assigned to me in current repo — selecting one opens it in a browser, the top option is "new", `ctrl+n` opens a sub-issue of the highlighted one, esc quits |
+| `enzo list` | **done** | list the open issues assigned to me in current repo, oldest first with sub-issues under their parent — selecting one opens it in a browser, the top option is "new", `ctrl+n` opens a sub-issue of the highlighted one, esc quits |
 | `enzo new [sub] "title" | **done** | create an new issue, or sub issue of current and assign to me |
 | `enzo start [issue-number] ["title"]` | **done** | calls `enzo new` if the issue doesn't exist. Then branch off `main`, push, and create a linked draft PR with no reviewers (if the PR doesn't exist). Then switch to that local branch.
 | `enzo finish` | **done** | check the worktree is clean, take the PR out of draft, check it can merge — review, its own checks, the base branch's build, and GitHub's own verdict — then merge it |

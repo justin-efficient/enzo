@@ -111,8 +111,8 @@ func TestAssignedIssuesQuery(t *testing.T) {
 	want := map[string]string{
 		"state":     "open",
 		"assignee":  "justin-efficient",
-		"sort":      "updated",
-		"direction": "desc",
+		"sort":      "created",
+		"direction": "asc",
 		"per_page":  "100",
 	}
 	for k, v := range want {
