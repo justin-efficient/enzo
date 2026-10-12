@@ -49,6 +49,9 @@ type Env struct {
 	// AskDraft runs the new-issue form. parent may be nil.
 	AskDraft func(repo string, parent *ghclient.Issue) (ui.Draft, error)
 
+	// AskEdit runs the edit form, filled in with the issue's title and body.
+	AskEdit func(repo string, issue ghclient.Issue) (ui.Draft, error)
+
 	// Await shows a spinner while poll is retried, until it reports true.
 	Await func(message string, poll func() (bool, error)) error
 
@@ -107,8 +110,8 @@ const usageBody = ` — opinionated issue and PR management for GitHub
 
 usage:
   enzo setup            store the token enzo uses for this repo
-  enzo list             browse the open issues assigned to you,
-                        opening the one you pick in a browser
+  enzo list             browse the open issues assigned to you:
+                        enter edits one, ctrl+o opens it in a browser
   enzo new ["title"]    open an issue assigned to you
   enzo new sub [n] ["title"]
                         open it as a sub-issue of #n, or pick a parent

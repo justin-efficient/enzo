@@ -263,3 +263,35 @@ func TestAssignedIssuesCarryParentReference(t *testing.T) {
 		t.Errorf("the parent should have no parent of its own, got %s#%d", issues[1].ParentRepo, issues[1].ParentNumber)
 	}
 }
+
+// An emptied body must be sent as "", not left out, or clearing it would
+// silently do nothing.
+func TestUpdateIssueSendsEmptyBody(t *testing.T) {
+	var method, path string
+	var body map[string]any
+	api := newTestAPI(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		method, path = r.Method, r.URL.Path
+		body = decodeBody(t, r)
+		writeJSON(t, w, map[string]any{"id": 1, "number": 57, "title": "renamed", "body": ""})
+	}))
+
+	got, err := api.UpdateIssue(context.Background(), testSlug, 57, IssueEdit{Title: "renamed"})
+	if err != nil {
+		t.Fatalf("UpdateIssue: %v", err)
+	}
+	if method != http.MethodPatch {
+		t.Errorf("method = %s, want PATCH", method)
+	}
+	if want := "/api/v3/repos/justin-efficient/enzo/issues/57"; path != want {
+		t.Errorf("path = %q, want %q", path, want)
+	}
+	if body["title"] != "renamed" {
+		t.Errorf("title = %v", body["title"])
+	}
+	if v, ok := body["body"]; !ok || v != "" {
+		t.Errorf("body = %v (present: %v), want an empty string", v, ok)
+	}
+	if got.Title != "renamed" {
+		t.Errorf("Title = %q", got.Title)
+	}
+}

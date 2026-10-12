@@ -290,3 +290,84 @@ func TestDraftFormHelpNamesTheSubmitKey(t *testing.T) {
 		t.Errorf("help should no longer mention ctrl+d:\n%s", out)
 	}
 }
+
+var keySave = tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl}
+
+// The edit form starts with the issue's text, saves on ctrl+s, and treats
+// ctrl+n as an ordinary key.
+func TestEditFormPrefillsAndSaves(t *testing.T) {
+	iss := ghclient.Issue{Number: 7, Title: "old title", Body: "line one\r\nline two"}
+	m := NewEditForm("o/r", iss, PlainStyles())
+
+	m = press(t, m, keySubmit)
+	if m.done {
+		t.Fatal("ctrl+n must not submit the edit form")
+	}
+
+	m = typeInto(t, m, "!")
+	m = press(t, m, keySave)
+	if !m.done || m.Canceled() {
+		t.Fatal("ctrl+s should save")
+	}
+	got := m.Draft()
+	if got.Title != "old title!" {
+		t.Errorf("Title = %q", got.Title)
+	}
+	if got.Body != "line one\nline two" {
+		t.Errorf("Body = %q, want LF line endings", got.Body)
+	}
+}
+
+func TestEditFormRefusesEmptyTitle(t *testing.T) {
+	m := NewEditForm("o/r", ghclient.Issue{Number: 7, Title: ""}, PlainStyles())
+	if m = press(t, m, keySave); m.done {
+		t.Error("saving with no title should not complete the form")
+	}
+}
+
+func TestEditFormHeading(t *testing.T) {
+	m := NewEditForm("o/r", ghclient.Issue{Number: 7, Title: "t"}, PlainStyles())
+	v := m.View().Content
+	for _, want := range []string{"edit #7 in o/r", "enter save"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("view missing %q:\n%s", want, v)
+		}
+	}
+}
+
+// Editing, enter saves from either field; a newline in the body is alt+enter.
+func TestEditFormEnterSavesFromTitleAndBody(t *testing.T) {
+	iss := ghclient.Issue{Number: 7, Title: "t", Body: "b"}
+
+	m := press(t, NewEditForm("o/r", iss, PlainStyles()), keyEnter)
+	if !m.done || m.Canceled() {
+		t.Error("enter in the title should save and close")
+	}
+
+	m = press(t, NewEditForm("o/r", iss, PlainStyles()), keyTab, keyEnter)
+	if !m.done || m.Canceled() {
+		t.Error("enter in the body should save and close")
+	}
+	if m.Draft().Body != "b" {
+		t.Errorf("Body = %q, enter must not insert a newline", m.Draft().Body)
+	}
+}
+
+func TestEditFormAltEnterInsertsNewline(t *testing.T) {
+	iss := ghclient.Issue{Number: 7, Title: "t", Body: "b"}
+	m := NewEditForm("o/r", iss, PlainStyles())
+	m = press(t, m, keyTab, tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModAlt})
+	if m.done {
+		t.Fatal("alt+enter should not save")
+	}
+	if got := m.body.Value(); !strings.Contains(got, "\n") {
+		t.Errorf("body = %q, want a newline", got)
+	}
+}
+
+func TestEditFormEnterRefusesEmptyTitle(t *testing.T) {
+	m := NewEditForm("o/r", ghclient.Issue{Number: 7}, PlainStyles())
+	if m = press(t, m, keyEnter); m.done {
+		t.Error("enter with no title should not save")
+	}
+}

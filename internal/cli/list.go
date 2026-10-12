@@ -5,14 +5,15 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"strings"
 
 	"github.com/justin-efficient/enzo/internal/ghclient"
 	"github.com/justin-efficient/enzo/internal/gitrepo"
 	"github.com/justin-efficient/enzo/internal/ui"
 )
 
-// List shows the open issues assigned to you and opens the one you pick in a
-// browser.
+// List shows the open issues assigned to you. Enter edits the highlighted one
+// and ctrl+o opens it in a browser.
 func List(ctx context.Context, env Env, args []string) error {
 	fs := flag.NewFlagSet("list", flag.ContinueOnError)
 	fs.SetOutput(env.Stderr)
@@ -83,17 +84,89 @@ func List(ctx context.Context, env Env, args []string) error {
 				return err
 			}
 
-		case ui.ActionChoose:
-			// Enter shows the issue and comes back to the list. It does not
+		case ui.ActionOpen:
+			// Opening shows the issue and comes back to the list. It does not
 			// start work on it: branching and pushing is too much to hang off
-			// the key that moves around a list, so starting stayed in `enzo
-			// start`. See docs/decisions/0007-enter-opens-the-issue.md.
+			// a key in a list, so starting stayed in `enzo start`. See
+			// docs/decisions/0007-enter-opens-the-issue.md.
 			openIssue(env, res.Issue)
+
+		case ui.ActionEdit:
+			edited, err := runEdit(ctx, env, root, client, slug, res.Issue)
+			if err != nil && !errors.Is(err, ErrCanceled) {
+				return err
+			}
+			if err := awaitEdited(ctx, env, client, slug, login, edited); err != nil {
+				return err
+			}
 
 		default:
 			return nil
 		}
 	}
+}
+
+// runEdit asks for a new title and body and saves them.
+//
+// The issue is re-read first: the listing lags and may be stale, and saving
+// over a body edited elsewhere a moment ago would silently lose that edit.
+//
+// It returns the saved issue, or nil when nothing was changed.
+func runEdit(ctx context.Context, env Env, root string, client ghclient.Client, slug gitrepo.Slug, listed ghclient.Issue) (*ghclient.Issue, error) {
+	current, err := client.Issue(ctx, slug, listed.Number)
+	if err != nil {
+		return nil, err
+	}
+
+	draft, err := env.AskEdit(slug.String(), current)
+	if err != nil {
+		return nil, err
+	}
+	title, body := strings.TrimSpace(draft.Title), normalizeBody(draft.Body)
+	if title == "" {
+		return nil, ErrCanceled
+	}
+	if title == strings.TrimSpace(current.Title) && body == normalizeBody(current.Body) {
+		return nil, nil
+	}
+
+	saved, err := client.UpdateIssue(ctx, slug, current.Number, ghclient.IssueEdit{Title: title, Body: body})
+	if err != nil {
+		return nil, err
+	}
+	record(env, root, slug.String(), "edited",
+		fmt.Sprintf("#%d %s", saved.Number, saved.Title), saved.URL)
+	return &saved, nil
+}
+
+// normalizeBody makes bodies comparable: GitHub often stores CRLF, the form
+// edits LF, and the form trims.
+func normalizeBody(s string) string {
+	return strings.TrimSpace(strings.ReplaceAll(s, "\r\n", "\n"))
+}
+
+// awaitEdited blocks until GitHub's issue listing shows the saved title and
+// body, so the list does not come back with the old text. edited is nil when
+// nothing was saved.
+func awaitEdited(ctx context.Context, env Env, client ghclient.Client, slug gitrepo.Slug, login string, edited *ghclient.Issue) error {
+	if edited == nil || env.Await == nil {
+		return nil
+	}
+
+	want := *edited
+	return env.Await(fmt.Sprintf("waiting for GitHub to list the edit to #%d", want.Number), func() (bool, error) {
+		issues, err := client.AssignedIssues(ctx, slug, login)
+		if err != nil {
+			return false, err
+		}
+		for _, iss := range issues {
+			if iss.Number == want.Number {
+				return iss.Title == want.Title && normalizeBody(iss.Body) == normalizeBody(want.Body), nil
+			}
+		}
+		// Not listed (unassigned or closed meanwhile): nothing to wait for.
+		return true, nil
+	})
 }
 
 // openIssue shows an issue in the browser. Like the log, a browser that will

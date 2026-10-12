@@ -41,6 +41,8 @@ func key(s string) tea.KeyPressMsg {
 		return tea.KeyPressMsg{Code: tea.KeyHome}
 	case "end":
 		return tea.KeyPressMsg{Code: tea.KeyEnd}
+	case "ctrl+o":
+		return tea.KeyPressMsg{Code: 'o', Mod: tea.ModCtrl}
 	case "ctrl+c":
 		return tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}
 	}
@@ -81,8 +83,8 @@ func TestEnterOnNewRow(t *testing.T) {
 func TestEnterOnIssue(t *testing.T) {
 	m := send(t, NewPicker("o/r", sampleIssues(3), PlainStyles()), "down", "down", "enter")
 	res := m.Result()
-	if res.Action != ActionChoose {
-		t.Fatalf("Action = %v, want ActionChoose", res.Action)
+	if res.Action != ActionEdit {
+		t.Fatalf("Action = %v, want ActionEdit", res.Action)
 	}
 	if res.Issue.Number != 2 {
 		t.Errorf("selected issue #%d, want #2", res.Issue.Number)
@@ -321,4 +323,22 @@ func itoa(i int) string {
 		i /= 10
 	}
 	return string(b)
+}
+
+func TestCtrlOOpensIssue(t *testing.T) {
+	m := send(t, NewPicker("o/r", sampleIssues(3), PlainStyles()), "down", "down", "ctrl+o")
+	res := m.Result()
+	if res.Action != ActionOpen || res.Issue.Number != 2 {
+		t.Fatalf("got %v #%d, want ActionOpen #2", res.Action, res.Issue.Number)
+	}
+}
+
+// There is no issue behind the "new" row, and the parent picker only chooses.
+func TestCtrlOIgnoredWithoutAnIssue(t *testing.T) {
+	if m := send(t, NewPicker("o/r", sampleIssues(3), PlainStyles()), "ctrl+o"); m.Done() {
+		t.Error("ctrl+o on the new row should do nothing")
+	}
+	if m := send(t, NewParentPicker("o/r", sampleIssues(3), PlainStyles()), "ctrl+o"); m.Done() {
+		t.Error("ctrl+o in the parent picker should do nothing")
+	}
 }

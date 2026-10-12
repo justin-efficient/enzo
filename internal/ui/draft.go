@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	bubblekey "charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/textarea"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
@@ -24,7 +25,9 @@ type DraftForm struct {
 	styles Styles
 	repo   string
 	// parent, when set, is the issue the new one will hang under.
-	parent   *ghclient.Issue
+	parent *ghclient.Issue
+	// edit, when set, is the issue being changed rather than created.
+	edit     *ghclient.Issue
 	onBody   bool
 	draft    Draft
 	canceled bool
@@ -48,6 +51,28 @@ func NewDraftForm(repo string, parent *ghclient.Issue, styles Styles) DraftForm 
 	ta.Blur()
 
 	return DraftForm{title: ti, body: ta, styles: styles, repo: repo, parent: parent}
+}
+
+// NewEditForm builds the form `enzo list` shows for an existing issue, filled
+// in with its current title and body.
+func NewEditForm(repo string, issue ghclient.Issue, styles Styles) DraftForm {
+	m := NewDraftForm(repo, nil, styles)
+	m.edit = &issue
+	m.title.SetValue(issue.Title)
+	// GitHub keeps whatever line endings the web form sent, often CRLF.
+	m.body.SetValue(strings.ReplaceAll(issue.Body, "\r\n", "\n"))
+	m.body.SetHeight(12)
+	// Enter saves here, so the body needs another way to start a new line.
+	m.body.KeyMap.InsertNewline = bubblekey.NewBinding(bubblekey.WithKeys("alt+enter", "shift+enter", "ctrl+j"))
+	return m
+}
+
+// submitKey is the key that accepts the form.
+func (m DraftForm) submitKey() string {
+	if m.edit != nil {
+		return "ctrl+s"
+	}
+	return "ctrl+n"
 }
 
 // Draft returns what was entered. Title is trimmed; an empty one means the
@@ -82,19 +107,18 @@ func (m DraftForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.toggleFocus(), nil
 
 		case "enter":
-			// Enter advances from the title; inside the body it is a newline.
-			if !m.onBody {
-				return m.toggleFocus(), nil
+			// Editing, enter saves. Creating, it advances from the title and
+			// inside the body it is a newline.
+			if m.edit == nil {
+				if !m.onBody {
+					return m.toggleFocus(), nil
+				}
+				break
 			}
+			return m.submit()
 
-		case "ctrl+n":
-			// Submitting with a blank title would create a nameless issue.
-			if strings.TrimSpace(m.title.Value()) == "" {
-				return m, nil
-			}
-			m.draft = Draft{Title: m.title.Value(), Body: m.body.Value()}
-			m.done = true
-			return m, tea.Quit
+		case m.submitKey():
+			return m.submit()
 		}
 	}
 
@@ -105,6 +129,17 @@ func (m DraftForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.title, cmd = m.title.Update(msg)
 	}
 	return m, cmd
+}
+
+// submit accepts the form unless the title is blank.
+func (m DraftForm) submit() (tea.Model, tea.Cmd) {
+	// Submitting with a blank title would leave a nameless issue.
+	if strings.TrimSpace(m.title.Value()) == "" {
+		return m, nil
+	}
+	m.draft = Draft{Title: m.title.Value(), Body: m.body.Value()}
+	m.done = true
+	return m, tea.Quit
 }
 
 // toggleFocus moves between the title and body fields.
@@ -130,7 +165,9 @@ func (m DraftForm) View() tea.View {
 	s := m.styles
 
 	heading := "new issue in " + m.repo
-	if m.parent != nil {
+	if m.edit != nil {
+		heading = fmt.Sprintf("edit #%d in %s", m.edit.Number, m.repo)
+	} else if m.parent != nil {
 		heading = fmt.Sprintf("new sub-issue of #%d in %s", m.parent.Number, m.repo)
 	}
 	b.WriteString(s.Title.Render(heading) + "\n")
@@ -144,7 +181,14 @@ func (m DraftForm) View() tea.View {
 	b.WriteString(m.fieldLabel("body", m.onBody) + "\n")
 	b.WriteString(m.body.View() + "\n\n")
 
-	help := "tab switch · ctrl+n create · esc cancel"
+	verb := "create"
+	if m.edit != nil {
+		verb = "save"
+	}
+	help := "tab switch · " + m.submitKey() + " " + verb + " · esc cancel"
+	if m.edit != nil {
+		help = "tab switch · enter save · alt+enter new line · esc cancel"
+	}
 	if strings.TrimSpace(m.title.Value()) == "" {
 		help = "tab switch · a title is required · esc cancel"
 	}

@@ -21,6 +21,7 @@ type Issue struct {
 	ID        int64
 	Number    int
 	Title     string
+	Body      string
 	State     string
 	URL       string
 	Labels    []string
@@ -42,6 +43,12 @@ type NewIssue struct {
 	Assignee string
 }
 
+// IssueEdit is the new title and body for an existing issue.
+type IssueEdit struct {
+	Title string
+	Body  string
+}
+
 // Client is the GitHub surface enzo depends on.
 type Client interface {
 	// Viewer returns the login of the authenticated user.
@@ -56,6 +63,8 @@ type Client interface {
 	Issue(ctx context.Context, slug gitrepo.Slug, number int) (Issue, error)
 	// CreateIssue opens a new issue and returns it.
 	CreateIssue(ctx context.Context, slug gitrepo.Slug, in NewIssue) (Issue, error)
+	// UpdateIssue replaces an issue's title and body and returns the result.
+	UpdateIssue(ctx context.Context, slug gitrepo.Slug, number int, in IssueEdit) (Issue, error)
 	// LinkSubIssue makes child a sub-issue of parent.
 	LinkSubIssue(ctx context.Context, slug gitrepo.Slug, parentNumber int, childID int64) error
 	// DefaultBranch returns the branch pull requests should target.
@@ -176,6 +185,7 @@ func convert(iss *github.Issue) Issue {
 		ID:        iss.GetID(),
 		Number:    iss.GetNumber(),
 		Title:     iss.GetTitle(),
+		Body:      iss.GetBody(),
 		State:     iss.GetState(),
 		URL:       iss.GetHTMLURL(),
 		Labels:    labels,
@@ -234,6 +244,18 @@ func (a *API) CreateIssue(ctx context.Context, slug gitrepo.Slug, in NewIssue) (
 	iss, _, err := a.gh.Issues.Create(ctx, slug.Owner, slug.Name, req)
 	if err != nil {
 		return Issue{}, wrap(err, fmt.Sprintf("could not create an issue in %s", slug))
+	}
+	return convert(iss), nil
+}
+
+// UpdateIssue sets an issue's title and body.
+func (a *API) UpdateIssue(ctx context.Context, slug gitrepo.Slug, number int, in IssueEdit) (Issue, error) {
+	iss, _, err := a.gh.Issues.Update(ctx, slug.Owner, slug.Name, number, github.UpdateIssueRequest{
+		Title: github.Ptr(in.Title),
+		Body:  github.Ptr(in.Body),
+	})
+	if err != nil {
+		return Issue{}, wrap(err, fmt.Sprintf("could not update %s#%d", slug, number))
 	}
 	return convert(iss), nil
 }

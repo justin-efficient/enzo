@@ -71,8 +71,8 @@ func TestCtrlNOnEmptyList(t *testing.T) {
 // Enter still just chooses the row; ctrl+n is the only way to get a sub-issue.
 func TestEnterStillChooses(t *testing.T) {
 	m := send(t, NewPicker("o/r", sampleIssues(3), PlainStyles()), "down", "enter")
-	if got := m.Result().Action; got != ActionChoose {
-		t.Errorf("Action = %v, want ActionChoose", got)
+	if got := m.Result().Action; got != ActionEdit {
+		t.Errorf("Action = %v, want ActionEdit", got)
 	}
 }
 

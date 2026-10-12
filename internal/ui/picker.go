@@ -18,17 +18,22 @@ const (
 	ActionCancel Action = iota
 	// ActionNew means the user picked the "new issue" row.
 	ActionNew
-	// ActionChoose means the user picked an existing issue. What that means
-	// is the caller's business: `enzo list` opens it in a browser, `enzo new
-	// sub` makes it the parent.
+	// ActionChoose means the user picked an existing issue as a parent, in
+	// the `enzo new sub` picker.
 	ActionChoose
+	// ActionEdit means the user pressed enter on an issue in `enzo list`, to
+	// edit its title or body.
+	ActionEdit
+	// ActionOpen means the user pressed ctrl+o on an issue in `enzo list`, to
+	// see it in a browser.
+	ActionOpen
 	// ActionNewSub means the user asked for a sub-issue of the highlighted
 	// issue, which Result.Issue carries.
 	ActionNewSub
 )
 
-// Result is the picker's outcome. Issue is only meaningful for ActionChoose
-// and ActionNewSub.
+// Result is the picker's outcome. Issue is meaningful for every action but
+// ActionCancel and ActionNew.
 type Result struct {
 	Action Action
 	Issue  ghclient.Issue
@@ -51,8 +56,12 @@ type Picker struct {
 	// newSub allows ctrl+n to open a sub-issue of the highlighted row.
 	newSub bool
 	// enterVerb is what the help line says enter does, which differs between
-	// the two pickers: `enzo list` shows the issue, `enzo new sub` chooses it.
+	// the two pickers: `enzo list` edits the issue, `enzo new sub` chooses it.
 	enterVerb string
+	// enterAction is what enter reports on an issue row.
+	enterAction Action
+	// canOpen allows ctrl+o to open the highlighted issue in a browser.
+	canOpen bool
 
 	cursor  int // 0 is the "new" row; issue i is at cursor i+1
 	offset  int // first visible issue index, for scrolling
@@ -74,10 +83,12 @@ func NewPicker(repo string, issues []ghclient.Issue, styles Styles) Picker {
 		heading: "open issues assigned to you in " + repo,
 		newRow:  true,
 		newSub:  true,
-		// Enter shows the issue. It does not start work on it: branching and
-		// pushing is too much to hang off the key that moves around a list.
-		// See docs/decisions/0007-enter-opens-the-issue.md.
-		enterVerb: "open in browser",
+		// Enter edits the issue and ctrl+o shows it. Neither starts work on
+		// it: see docs/decisions/0007-enter-opens-the-issue.md and
+		// docs/decisions/0008-enter-edits-ctrl-o-opens.md.
+		enterVerb:   "edit",
+		enterAction: ActionEdit,
+		canOpen:     true,
 	}
 }
 
@@ -85,12 +96,13 @@ func NewPicker(repo string, issues []ghclient.Issue, styles Styles) Picker {
 // has no "new" row: you are choosing among issues that already exist.
 func NewParentPicker(repo string, issues []ghclient.Issue, styles Styles) Picker {
 	return Picker{
-		repo:      repo,
-		nodes:     ghclient.Arrange(repo, issues),
-		styles:    styles,
-		visible:   defaultVisible,
-		heading:   "choose a parent issue in " + repo,
-		enterVerb: "select",
+		repo:        repo,
+		nodes:       ghclient.Arrange(repo, issues),
+		styles:      styles,
+		visible:     defaultVisible,
+		heading:     "choose a parent issue in " + repo,
+		enterVerb:   "select",
+		enterAction: ActionChoose,
 	}
 }
 
@@ -182,6 +194,15 @@ func (m Picker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.done = true
 			return m, tea.Quit
 
+		case "ctrl+o":
+			iss, ok := m.issueAt(m.cursor)
+			if !m.canOpen || !ok {
+				return m, nil
+			}
+			m.result = Result{Action: ActionOpen, Issue: iss}
+			m.done = true
+			return m, tea.Quit
+
 		case "enter":
 			iss, ok := m.issueAt(m.cursor)
 			if !ok {
@@ -191,7 +212,7 @@ func (m Picker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.result = Result{Action: ActionNew}
 			} else {
-				m.result = Result{Action: ActionChoose, Issue: iss}
+				m.result = Result{Action: m.enterAction, Issue: iss}
 			}
 			m.done = true
 			return m, tea.Quit
@@ -272,7 +293,7 @@ func (m Picker) View() tea.View {
 func (m Picker) helpLine() string {
 	keys := "↑/↓ move · enter " + m.enterVerb + " · esc cancel"
 	if m.newSub {
-		keys = "↑/↓ move · enter " + m.enterVerb + " · ctrl+n new sub-issue · esc quit"
+		keys = "↑/↓ move · enter " + m.enterVerb + " · ctrl+o open · ctrl+n new sub-issue · esc quit"
 	}
 	return version.Banner() + " · " + keys
 }

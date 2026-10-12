@@ -49,6 +49,7 @@ func main() {
 		Pick:       pick,
 		PickParent: pickParent,
 		AskDraft:   askDraft,
+		AskEdit:    askEdit,
 		Await:      await,
 		OpenURL:    browser.Open,
 		Log:        eventlog.Append,
@@ -115,6 +116,19 @@ func await(message string, poll func() (bool, error)) error {
 // askDraft runs the new-issue form.
 func askDraft(repo string, parent *ghclient.Issue) (ui.Draft, error) {
 	m, err := tea.NewProgram(ui.NewDraftForm(repo, parent, ui.DefaultStyles())).Run()
+	if err != nil {
+		return ui.Draft{}, err
+	}
+	f, ok := m.(ui.DraftForm)
+	if !ok || f.Canceled() {
+		return ui.Draft{}, cli.ErrCanceled
+	}
+	return f.Draft(), nil
+}
+
+// askEdit runs the edit form for an existing issue.
+func askEdit(repo string, issue ghclient.Issue) (ui.Draft, error) {
+	m, err := tea.NewProgram(ui.NewEditForm(repo, issue, ui.DefaultStyles())).Run()
 	if err != nil {
 		return ui.Draft{}, err
 	}

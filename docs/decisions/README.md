@@ -11,3 +11,4 @@ so the same ground is not re-covered later.
 - [0005 — `enzo abort` closes the pull request, because nothing can delete one](0005-abort-closes-it-cannot-delete.md)
 - [0006 — `enzo finish` uses GraphQL, because REST cannot undraft a pull request](0006-finish-needs-graphql.md) — revisits 0001
 - [0007 — Enter in `enzo list` opens the issue, and nothing starts it](0007-enter-opens-the-issue.md)
+- [0008 — Enter in `enzo list` edits the issue; ctrl+o opens it](0008-enter-edits-ctrl-o-opens.md) — revisits 0007

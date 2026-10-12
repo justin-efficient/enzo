@@ -133,8 +133,8 @@ func TestListPickerOutcomes(t *testing.T) {
 			emptyOut: true,
 		},
 		{
-			name:     "picking an issue prints nothing; it opens a browser",
-			result:   ui.Result{Action: ui.ActionChoose, Issue: listIssues[0]},
+			name:     "ctrl+o prints nothing; it opens a browser",
+			result:   ui.Result{Action: ui.ActionOpen, Issue: listIssues[0]},
 			emptyOut: true,
 		},
 	}
@@ -637,14 +637,14 @@ func TestListCancelExits(t *testing.T) {
 	}
 }
 
-// Picking an existing issue opens it in a browser and comes back to the list.
+// ctrl+o on an issue opens it in a browser and comes back to the list.
 // It starts nothing: no branch, no pull request.
-func TestListChooseOpensBrowser(t *testing.T) {
+func TestListOpenOpensBrowser(t *testing.T) {
 	h := newHarness(t, defaultRemote)
 	seedConfig(t, h, &config.Config{Token: "t"})
 	h.client.issues = listIssues
 	h.env.Interactive = true
-	h.picked = ui.Result{Action: ui.ActionChoose, Issue: listIssues[0]}
+	h.picked = ui.Result{Action: ui.ActionOpen, Issue: listIssues[0]}
 
 	if err := List(context.Background(), h.env, nil); err != nil {
 		t.Fatalf("List: %v", err)
@@ -667,12 +667,12 @@ func TestListChooseOpensBrowser(t *testing.T) {
 
 // A browser that will not open is a warning with the URL in it, not a failed
 // command: the list stays usable on a machine with no browser.
-func TestListChooseBrowserFailureWarns(t *testing.T) {
+func TestListOpenBrowserFailureWarns(t *testing.T) {
 	h := newHarness(t, defaultRemote)
 	seedConfig(t, h, &config.Config{Token: "t"})
 	h.client.issues = listIssues
 	h.env.Interactive = true
-	h.picked = ui.Result{Action: ui.ActionChoose, Issue: listIssues[0]}
+	h.picked = ui.Result{Action: ui.ActionOpen, Issue: listIssues[0]}
 	h.openErr = errBoom
 
 	if err := List(context.Background(), h.env, nil); err != nil {
@@ -841,5 +841,91 @@ func TestListSubIssueIsLogged(t *testing.T) {
 	}
 	if h.out() != "" {
 		t.Errorf("stdout should stay empty, got:\n%s", h.out())
+	}
+}
+
+// Enter edits the issue: the current text is fetched fresh, the change is
+// saved and logged, and the loop waits for the listing to show it.
+func TestListEditSavesChange(t *testing.T) {
+	h := newHarness(t, defaultRemote)
+	seedConfig(t, h, &config.Config{Token: "t"})
+	h.client.issues = append([]ghclient.Issue{}, listIssues...)
+	h.client.byNumber = map[int]ghclient.Issue{12: {Number: 12, Title: "fix the thing", Body: "fresh body"}}
+	h.env.Interactive = true
+	h.picked = ui.Result{Action: ui.ActionEdit, Issue: listIssues[0]}
+	h.edited = ui.Draft{Title: " fixed the thing ", Body: "new body\n"}
+
+	if err := List(context.Background(), h.env, nil); err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if h.editedIssue.Body != "fresh body" {
+		t.Errorf("form saw body %q, want the freshly fetched one", h.editedIssue.Body)
+	}
+	if h.client.gotUpdateN != 12 || h.client.gotUpdate != (ghclient.IssueEdit{Title: "fixed the thing", Body: "new body"}) {
+		t.Errorf("updated #%d with %+v", h.client.gotUpdateN, h.client.gotUpdate)
+	}
+	if h.awaitCalls != 1 {
+		t.Errorf("waited %d times, want 1", h.awaitCalls)
+	}
+	if got := h.findLogged(t, "edited"); !strings.Contains(got.Text, "#12") {
+		t.Errorf("log text %q", got.Text)
+	}
+	if h.pickCalls != 2 {
+		t.Errorf("picker ran %d times, want 2 — editing returns to the list", h.pickCalls)
+	}
+	if len(h.opened) != 0 {
+		t.Errorf("editing must not open a browser, opened %v", h.opened)
+	}
+}
+
+// Leaving the text as it was — modulo CRLF and trailing space — writes nothing.
+func TestListEditUnchangedWritesNothing(t *testing.T) {
+	h := newHarness(t, defaultRemote)
+	seedConfig(t, h, &config.Config{Token: "t"})
+	h.client.issues = listIssues
+	h.client.byNumber = map[int]ghclient.Issue{12: {Number: 12, Title: "fix the thing", Body: "a\r\nb\r\n"}}
+	h.env.Interactive = true
+	h.picked = ui.Result{Action: ui.ActionEdit, Issue: listIssues[0]}
+	h.edited = ui.Draft{Title: "fix the thing", Body: "a\nb"}
+
+	if err := List(context.Background(), h.env, nil); err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if h.client.updateCalls != 0 || h.awaitCalls != 0 {
+		t.Errorf("updates=%d waits=%d, want none", h.client.updateCalls, h.awaitCalls)
+	}
+}
+
+func TestListEditCanceledWritesNothing(t *testing.T) {
+	h := newHarness(t, defaultRemote)
+	seedConfig(t, h, &config.Config{Token: "t"})
+	h.client.issues = listIssues
+	h.env.Interactive = true
+	h.picked = ui.Result{Action: ui.ActionEdit, Issue: listIssues[0]}
+	h.editErr = ErrCanceled
+
+	if err := List(context.Background(), h.env, nil); err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if h.client.updateCalls != 0 {
+		t.Error("a canceled edit must not write")
+	}
+	if h.pickCalls != 2 {
+		t.Errorf("picker ran %d times, want 2 — backing out returns to the list", h.pickCalls)
+	}
+}
+
+func TestListStopsOnEditFailure(t *testing.T) {
+	h := newHarness(t, defaultRemote)
+	seedConfig(t, h, &config.Config{Token: "t"})
+	h.client.issues = listIssues
+	h.client.updateErr = errBoom
+	h.env.Interactive = true
+	h.picked = ui.Result{Action: ui.ActionEdit, Issue: listIssues[0]}
+	h.edited = ui.Draft{Title: "changed"}
+
+	requireErrorContains(t, List(context.Background(), h.env, nil), "boom")
+	if h.pickCalls != 1 {
+		t.Errorf("picker ran %d times, want 1", h.pickCalls)
 	}
 }

@@ -44,6 +44,13 @@ type fakeClient struct {
 	byNumber map[int]ghclient.Issue
 	issueErr error
 
+	// updated records the last UpdateIssue; updateErr overrides it. A
+	// successful update is reflected in the listing after lagPolls polls.
+	updateErr   error
+	updateCalls int
+	gotUpdate   ghclient.IssueEdit
+	gotUpdateN  int
+
 	linkErr      error
 	linkedParent int
 	linkedChild  int64
@@ -206,6 +213,24 @@ func (f *fakeClient) CreateIssue(_ context.Context, slug gitrepo.Slug, in ghclie
 	return out, nil
 }
 
+func (f *fakeClient) UpdateIssue(_ context.Context, _ gitrepo.Slug, number int, in ghclient.IssueEdit) (ghclient.Issue, error) {
+	f.updateCalls++
+	f.gotUpdate, f.gotUpdateN = in, number
+	if f.updateErr != nil {
+		return ghclient.Issue{}, f.updateErr
+	}
+	out := ghclient.Issue{Number: number, Title: in.Title, Body: in.Body}
+	for i, iss := range f.issues {
+		if iss.Number == number {
+			out.URL = iss.URL
+			// Rewrite the listing, so the wait for the edit can succeed.
+			f.issues = append([]ghclient.Issue{}, f.issues...)
+			f.issues[i].Title, f.issues[i].Body = in.Title, in.Body
+		}
+	}
+	return out, nil
+}
+
 func (f *fakeClient) LinkSubIssue(_ context.Context, slug gitrepo.Slug, parent int, child int64) error {
 	f.linkCalls++
 	f.linkedParent, f.linkedChild = parent, child
@@ -282,6 +307,13 @@ type harness struct {
 	draftErr      error
 	draftCalls    int
 	draftedParent *ghclient.Issue
+
+	// edited is what the edit form returns, and editedIssue what it was
+	// shown.
+	edited      ui.Draft
+	editErr     error
+	editCalls   int
+	editedIssue ghclient.Issue
 }
 
 // newHarness builds a temp git repo with an origin remote and an Env wired to
@@ -360,6 +392,11 @@ func newHarness(t *testing.T, remote string) *harness {
 			h.draftCalls++
 			h.draftedParent = parent
 			return h.drafted, h.draftErr
+		},
+		AskEdit: func(repo string, issue ghclient.Issue) (ui.Draft, error) {
+			h.editCalls++
+			h.editedIssue = issue
+			return h.edited, h.editErr
 		},
 		Await: func(message string, poll func() (bool, error)) error {
 			h.awaitCalls++
