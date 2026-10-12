@@ -18,13 +18,16 @@ import (
 // Issue is the subset of a GitHub issue enzo displays.
 type Issue struct {
 	// ID is GitHub's database id. Sub-issue links are made by id, not number.
-	ID        int64
-	Number    int
-	Title     string
-	Body      string
-	State     string
-	URL       string
-	Labels    []string
+	ID     int64
+	Number int
+	Title  string
+	Body   string
+	State  string
+	URL    string
+	Labels []string
+	// Priority is filled in by the caller from Priorities; it is not part of
+	// the REST listing.
+	Priority  Priority
 	UpdatedAt time.Time
 
 	// ParentRepo and ParentNumber identify the issue this one hangs under,
@@ -56,6 +59,9 @@ type Client interface {
 	// AssignedIssues lists open issues in slug assigned to login, oldest
 	// first. Pull requests are excluded.
 	AssignedIssues(ctx context.Context, slug gitrepo.Slug, login string) ([]Issue, error)
+	// Priorities maps issue number to its Projects v2 "Priority" value for
+	// the open issues assigned to login. Issues without one are absent.
+	Priorities(ctx context.Context, slug gitrepo.Slug, login string) (map[int]Priority, error)
 	// OpenIssues lists every open issue in slug, newest activity first. Pull
 	// requests are excluded. It is what `enzo new sub` offers as parents.
 	OpenIssues(ctx context.Context, slug gitrepo.Slug) ([]Issue, error)

@@ -45,7 +45,7 @@ func List(ctx context.Context, env Env, args []string) error {
 	// runs in a loop, re-reading the issues each time round. enzo keeps no
 	// issue state of its own: the list is always what GitHub reports.
 	for {
-		issues, err := client.AssignedIssues(ctx, slug, login)
+		issues, err := assignedWithPriority(ctx, client, slug, login)
 		if err != nil {
 			return err
 		}
@@ -104,6 +104,29 @@ func List(ctx context.Context, env Env, args []string) error {
 			return nil
 		}
 	}
+}
+
+// assignedWithPriority lists the issues and fills in each one's board
+// priority, which colors its number in the picker.
+//
+// Priority is decoration. It needs GraphQL and the `read:project` token scope,
+// and plenty of issues are on no board, so any failure to read it leaves the
+// numbers uncolored instead of failing the list.
+func assignedWithPriority(ctx context.Context, client ghclient.Client, slug gitrepo.Slug, login string) ([]ghclient.Issue, error) {
+	issues, err := client.AssignedIssues(ctx, slug, login)
+	if err != nil {
+		return nil, err
+	}
+	prios, err := client.Priorities(ctx, slug, login)
+	if err != nil {
+		return issues, nil
+	}
+	out := make([]ghclient.Issue, len(issues))
+	for i, iss := range issues {
+		iss.Priority = prios[iss.Number]
+		out[i] = iss
+	}
+	return out, nil
 }
 
 // runEdit asks for a new title and body and saves them.

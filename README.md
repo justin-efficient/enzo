@@ -90,6 +90,8 @@ composes in pipes and scripts.
 | `ctrl+n` | open a sub-issue of the highlighted issue — a top-level issue on the "new issue" row |
 | esc | quit |
 
+Issue numbers are colored by the issue's `Priority` field on its GitHub project board, in the color the board gives it. This needs the `read:project` token scope; without it, or for issues on no board, the numbers stay gray.
+
 ```
 open issues assigned to you in justin-efficient/enzo
 

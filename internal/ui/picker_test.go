@@ -342,3 +342,19 @@ func TestCtrlOIgnoredWithoutAnIssue(t *testing.T) {
 		t.Error("ctrl+o in the parent picker should do nothing")
 	}
 }
+
+func TestPriorityNumberColors(t *testing.T) {
+	st := DefaultStyles()
+	red, none := st.PriorityNumber("RED").GetForeground(), st.PriorityNumber("").GetForeground()
+	if red == none {
+		t.Error("RED should color the number differently from no priority")
+	}
+	if unknown := st.PriorityNumber("MAUVE").GetForeground(); unknown != none {
+		t.Error("an unknown color should fall back to the plain number")
+	}
+	for c := range priorityColors {
+		if st.PriorityNumber(c).GetForeground() == none {
+			t.Errorf("%s has no distinct color", c)
+		}
+	}
+}

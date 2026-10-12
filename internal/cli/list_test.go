@@ -929,3 +929,41 @@ func TestListStopsOnEditFailure(t *testing.T) {
 		t.Errorf("picker ran %d times, want 1", h.pickCalls)
 	}
 }
+
+// Board priority reaches the picker on each issue, matched by number.
+func TestListPassesPriorityToPicker(t *testing.T) {
+	h := newHarness(t, defaultRemote)
+	seedConfig(t, h, &config.Config{Token: "t"})
+	h.client.issues = listIssues
+	h.client.priorities = map[int]ghclient.Priority{34: {Name: "P0", Color: "RED"}}
+	h.env.Interactive = true
+
+	if err := List(context.Background(), h.env, nil); err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if got := h.pickedIssues[0].Priority; got != (ghclient.Priority{}) {
+		t.Errorf("#12 priority = %v, want none", got)
+	}
+	if got := h.pickedIssues[1].Priority; got.Color != "RED" {
+		t.Errorf("#34 priority = %v, want RED", got)
+	}
+}
+
+// Priority is decoration: a token without read:project still lists issues.
+func TestListSurvivesPriorityFailure(t *testing.T) {
+	h := newHarness(t, defaultRemote)
+	seedConfig(t, h, &config.Config{Token: "t"})
+	h.client.issues = listIssues
+	h.client.prioritiesErr = errBoom
+	h.env.Interactive = true
+
+	if err := List(context.Background(), h.env, nil); err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(h.pickedIssues) != len(listIssues) {
+		t.Errorf("picker saw %d issues, want %d", len(h.pickedIssues), len(listIssues))
+	}
+	if h.stderr.Len() != 0 {
+		t.Errorf("unexpected stderr: %s", h.stderr.String())
+	}
+}

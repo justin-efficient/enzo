@@ -333,7 +333,11 @@ func (m Picker) issueRow(n ghclient.Node, selected bool, numW int) string {
 	s := m.styles
 	iss := n.Issue
 
-	cols := []string{Indent(n.Depth) + s.Number.Render(padRight(fmt.Sprintf("#%d", iss.Number), numW))}
+	number := s.Number
+	if s.PriorityNumber != nil {
+		number = s.PriorityNumber(iss.Priority.Color)
+	}
+	cols := []string{Indent(n.Depth) + number.Render(padRight(fmt.Sprintf("#%d", iss.Number), numW))}
 
 	title := s.Normal.Render(iss.Title)
 	if selected {

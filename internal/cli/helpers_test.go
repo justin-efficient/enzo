@@ -25,6 +25,10 @@ type fakeClient struct {
 	issues    []ghclient.Issue
 	issuesErr error
 
+	// priorities backs Priorities; prioritiesErr makes it fail.
+	priorities    map[int]ghclient.Priority
+	prioritiesErr error
+
 	// openIssues backs OpenIssues; nil falls back to issues.
 	openIssues []ghclient.Issue
 	openErr    error
@@ -176,6 +180,10 @@ func (f *fakeClient) AssignedIssues(_ context.Context, slug gitrepo.Slug, login 
 		return f.issues, nil
 	}
 	return append([]ghclient.Issue{*f.lastCreated}, f.issues...), nil
+}
+
+func (f *fakeClient) Priorities(context.Context, gitrepo.Slug, string) (map[int]ghclient.Priority, error) {
+	return f.priorities, f.prioritiesErr
 }
 
 func (f *fakeClient) OpenIssues(_ context.Context, slug gitrepo.Slug) ([]ghclient.Issue, error) {
