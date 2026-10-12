@@ -28,6 +28,16 @@ type Config struct {
 	// Log is where enzo records what it creates. Empty uses the default
 	// state directory.
 	Log string `json:"log,omitempty"`
+	// Project is the project board priorities are set on. `enzo setup` picks
+	// one; empty means enzo guesses from your assigned issues.
+	Project *ProjectRef `json:"project,omitempty"`
+}
+
+// ProjectRef names a Projects v2 board: the user or organization that owns it,
+// and its number within that owner.
+type ProjectRef struct {
+	Owner  string `json:"owner"`
+	Number int    `json:"number"`
 }
 
 // Path returns the .enzo path for a repository root.

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/justin-efficient/enzo/internal/config"
+	"github.com/justin-efficient/enzo/internal/ghclient"
 )
 
 func TestSetupWritesConfig(t *testing.T) {
@@ -225,5 +226,85 @@ func TestSetupRejectsUnknownFlag(t *testing.T) {
 	h := newHarness(t, defaultRemote)
 	if err := Setup(context.Background(), h.env, []string{"--nope"}); err == nil {
 		t.Error("an unknown flag should be an error")
+	}
+}
+
+var testBoards = []ghclient.Board{
+	{Owner: "EfficientComputer", Number: 12, Title: "Optimization"},
+	{Owner: "EfficientComputer", Number: 5, Title: "Architecture"},
+}
+
+// Setup pins the first candidate board and says what else it saw.
+func TestSetupPinsFirstBoard(t *testing.T) {
+	h := newHarness(t, defaultRemote)
+	h.client.boards = testBoards
+
+	if err := Setup(context.Background(), h.env, []string{"--token", "t"}); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	cfg, err := config.Load(h.root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Project == nil || *cfg.Project != (config.ProjectRef{Owner: "EfficientComputer", Number: 12}) {
+		t.Errorf("Project = %+v, want EfficientComputer/12", cfg.Project)
+	}
+	for _, want := range []string{"Optimization (#12)", "Architecture (#5)"} {
+		if !strings.Contains(h.out(), want) {
+			t.Errorf("output missing %q:\n%s", want, h.out())
+		}
+	}
+}
+
+// Re-running setup does not move a board that is still a candidate.
+func TestSetupKeepsPinnedBoard(t *testing.T) {
+	h := newHarness(t, defaultRemote)
+	h.client.boards = testBoards
+	seedConfig(t, h, &config.Config{Token: "old", Project: &config.ProjectRef{Owner: "EfficientComputer", Number: 5}})
+
+	if err := Setup(context.Background(), h.env, []string{"--token", "t", "--force"}); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	cfg, _ := config.Load(h.root)
+	if cfg.Project == nil || cfg.Project.Number != 5 {
+		t.Errorf("Project = %+v, want the pinned #5 kept", cfg.Project)
+	}
+}
+
+// A pin that was set by hand and is not among the candidates is left alone.
+func TestSetupLeavesUnlistedPinAlone(t *testing.T) {
+	h := newHarness(t, defaultRemote)
+	h.client.boards = testBoards
+	seedConfig(t, h, &config.Config{Token: "old", Project: &config.ProjectRef{Owner: "someone", Number: 99}})
+
+	if err := Setup(context.Background(), h.env, []string{"--token", "t", "--force"}); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	cfg, _ := config.Load(h.root)
+	if cfg.Project == nil || cfg.Project.Number != 99 {
+		t.Errorf("Project = %+v, want the pin kept", cfg.Project)
+	}
+}
+
+// Boards are a convenience: not finding any, or failing to look, still sets up.
+func TestSetupWithoutBoards(t *testing.T) {
+	for name, set := range map[string]func(*harness){
+		"none":  func(h *harness) { h.client.boards = nil },
+		"error": func(h *harness) { h.client.boardsErr = errBoom },
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := newHarness(t, defaultRemote)
+			set(h)
+			if err := Setup(context.Background(), h.env, []string{"--token", "t"}); err != nil {
+				t.Fatalf("Setup: %v", err)
+			}
+			cfg, _ := config.Load(h.root)
+			if cfg.Project != nil {
+				t.Errorf("Project = %+v, want none", cfg.Project)
+			}
+			if strings.Contains(h.out(), "board") {
+				t.Errorf("no board to report:\n%s", h.out())
+			}
+		})
 	}
 }

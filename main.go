@@ -114,8 +114,8 @@ func await(message string, poll func() (bool, error)) error {
 }
 
 // askDraft runs the new-issue form.
-func askDraft(repo string, parent *ghclient.Issue) (ui.Draft, error) {
-	m, err := tea.NewProgram(ui.NewDraftForm(repo, parent, ui.DefaultStyles())).Run()
+func askDraft(repo string, parent *ghclient.Issue, prio *ghclient.PriorityField) (ui.Draft, error) {
+	m, err := tea.NewProgram(ui.NewDraftForm(repo, parent, ui.DefaultStyles()).WithPriority(prio)).Run()
 	if err != nil {
 		return ui.Draft{}, err
 	}
@@ -127,8 +127,8 @@ func askDraft(repo string, parent *ghclient.Issue) (ui.Draft, error) {
 }
 
 // askEdit runs the edit form for an existing issue.
-func askEdit(repo string, issue ghclient.Issue) (ui.Draft, error) {
-	m, err := tea.NewProgram(ui.NewEditForm(repo, issue, ui.DefaultStyles())).Run()
+func askEdit(repo string, issue ghclient.Issue, prio *ghclient.PriorityField) (ui.Draft, error) {
+	m, err := tea.NewProgram(ui.NewEditForm(repo, issue, prio, ui.DefaultStyles())).Run()
 	if err != nil {
 		return ui.Draft{}, err
 	}

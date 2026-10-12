@@ -13,3 +13,5 @@ so the same ground is not re-covered later.
 - [0007 — Enter in `enzo list` opens the issue, and nothing starts it](0007-enter-opens-the-issue.md)
 - [0008 — Enter in `enzo list` edits the issue; ctrl+o opens it](0008-enter-edits-ctrl-o-opens.md) — revisits 0007
 - [0009 — `enzo list` colors the issue number by board priority](0009-priority-colors-the-issue-number.md) — revisits 0001
+- [0010 — The issue forms have a priority selector](0010-priority-selector-in-the-editor.md) — builds on 0009
+- [0011 — `enzo setup` pins the board priorities live on](0011-setup-pins-the-priority-board.md) — builds on 0010

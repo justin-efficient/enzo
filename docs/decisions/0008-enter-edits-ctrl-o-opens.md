@@ -14,8 +14,9 @@ round trip through the browser is a lot for that.
 ## Decision
 
 - **Enter** opens an inline form, the same one `enzo new` uses, filled with the
-  issue's title and body. `enter` saves and closes, `esc` backs out. A new line
-  in the body is `alt+enter` (or `ctrl+j`), since enter is taken; `ctrl+s` also saves.
+  issue's title and body. `ctrl+s` saves and `esc` backs out; enter edits text
+  as it does in the new-issue form (it moves on from the title, and is a newline
+  in the body).
 - **`ctrl+o`** opens the issue in a browser, which is what enter did.
 
 0007's reasoning still holds: nothing in the picker starts work. Editing
@@ -35,3 +36,10 @@ asked for by name.
 - Saves are logged as `edited`.
 - The parent picker in `enzo new sub` is unchanged: enter selects, and ctrl+o
   does nothing there.
+
+## Reversed: enter does not save
+
+For a short while enter saved and closed the edit form, with `alt+enter` for a
+newline in the body. That made editing a multi-line body awkward and made the
+two forms behave differently, so it was reverted: in both forms **`ctrl+s`
+saves** (`ctrl+n` still works in the new-issue form) and enter is always text.

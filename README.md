@@ -10,7 +10,7 @@ A tiny, opinionated CLI for GitHub that makes issue & PR management simpler for 
 
 | command | status | what it does |
 | --- | --- | --- |
-| `enzo setup` | **done** | create the `.enzo` file with the token used to reach this repo |
+| `enzo setup` | **done** | create the `.enzo` file with the token used to reach this repo, and the project board priorities live on |
 | `enzo list` | **done** | list the open issues assigned to me in current repo, oldest first with sub-issues under their parent — enter edits its title or body, `ctrl+o` opens it in a browser, the top option is "new", `ctrl+n` opens a sub-issue of the highlighted one, esc quits |
 | `enzo new [sub] "title" | **done** | create an new issue, or sub issue of current and assign to me |
 | `enzo start [issue-number] ["title"]` | **done** | calls `enzo new` if the issue doesn't exist. Then branch off `main`, push, and create a linked draft PR with no reviewers (if the PR doesn't exist). Then switch to that local branch.
@@ -32,14 +32,24 @@ echo "$TOKEN" | enzo setup        # from stdin
 enzo setup --host https://ghe.internal/api/v3/   # GitHub Enterprise
 ```
 
+Setup also pins the project board priorities live on, as `"project"` in `.enzo`:
+the first board with a Priority field that the repo is linked to, or that your
+assigned issues are on. Other candidates are listed in its report; edit
+`.enzo` to use one. Re-running setup keeps the pin. With a board pinned, new
+issues are added to it, and editing an issue that is not on it adds it on save,
+without asking. Priorities need the `project` token scope (`read:project` to
+see them). See [decision 0011](docs/decisions/0011-setup-pins-the-priority-board.md).
+
 If you would rather not keep a token on disk, enzo also reads `$ENZO_TOKEN`
 and `$GITHUB_TOKEN`, in that order, after `.enzo`.
 
 ## New issues
 
 `enzo new` opens an issue in the current repo, assigned to you. With no title
-it shows a form: tab switches between title and body, `ctrl+n` creates, `esc`
-cancels. A title is required.
+it shows a form: tab switches between title, body and — when you have issues on
+a project board with a Priority field — a priority selector (default P2), `ctrl+s`
+creates, `esc` cancels. A title is required. A chosen priority adds the new issue
+to that board.
 
 ```sh
 enzo new                                  # form
@@ -85,7 +95,7 @@ composes in pipes and scripts.
 | key | in the picker |
 | --- | --- |
 | ↑ / ↓ | move |
-| enter | edit the highlighted issue's title and body in a form (enter saves, alt+enter adds a line in the body, esc backs out), then come back to the list — on the "new issue" row, open the new-issue form |
+| enter | edit the highlighted issue's title and body in a form (`ctrl+s` saves, esc backs out; tab reaches a priority selector, default P2, when the issue is on a board), then come back to the list — on the "new issue" row, open the new-issue form |
 | `ctrl+o` | show the highlighted issue in your browser, then come back to the list |
 | `ctrl+n` | open a sub-issue of the highlighted issue — a top-level issue on the "new issue" row |
 | esc | quit |

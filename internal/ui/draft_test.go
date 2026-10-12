@@ -38,7 +38,7 @@ var (
 	keyTab    = tea.KeyPressMsg{Code: tea.KeyTab}
 	keyEnter  = tea.KeyPressMsg{Code: tea.KeyEnter}
 	keyEsc    = tea.KeyPressMsg{Code: tea.KeyEscape}
-	keySubmit = tea.KeyPressMsg{Code: 'n', Mod: tea.ModCtrl}
+	keySubmit = tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl}
 )
 
 func TestDraftFormCollectsTitleAndBody(t *testing.T) {
@@ -64,7 +64,7 @@ func TestDraftFormCollectsTitleAndBody(t *testing.T) {
 func TestDraftFormEnterAdvancesFromTitle(t *testing.T) {
 	m := typeInto(t, NewDraftForm("o/r", nil, PlainStyles()), "a title")
 	m = press(t, m, keyEnter)
-	if !m.onBody {
+	if m.focus != focusBody {
 		t.Error("enter on the title should move focus to the body")
 	}
 	if m.done {
@@ -91,15 +91,15 @@ func TestDraftFormEnterInBodyIsANewline(t *testing.T) {
 
 func TestDraftFormTabCyclesFields(t *testing.T) {
 	m := NewDraftForm("o/r", nil, PlainStyles())
-	if m.onBody {
+	if m.focus == focusBody {
 		t.Fatal("the form should open on the title")
 	}
 	m = press(t, m, keyTab)
-	if !m.onBody {
+	if m.focus != focusBody {
 		t.Error("tab should move to the body")
 	}
 	m = press(t, m, keyTab)
-	if m.onBody {
+	if m.focus == focusBody {
 		t.Error("tab should move back to the title")
 	}
 }
@@ -177,7 +177,7 @@ func TestDraftFormHelpFlagsMissingTitle(t *testing.T) {
 		t.Errorf("empty form should say a title is required:\n%s", m.View().Content)
 	}
 	m = typeInto(t, m, "now it has one")
-	if !strings.Contains(m.View().Content, "ctrl+n create") {
+	if !strings.Contains(m.View().Content, "ctrl+s create") {
 		t.Errorf("once titled, the form should offer to create:\n%s", m.View().Content)
 	}
 }
@@ -283,29 +283,39 @@ func TestDraftFormSubmitsFromBody(t *testing.T) {
 func TestDraftFormHelpNamesTheSubmitKey(t *testing.T) {
 	m := typeInto(t, NewDraftForm("o/r", nil, PlainStyles()), "a title")
 	out := m.View().Content
-	if !strings.Contains(out, "ctrl+n create") {
-		t.Errorf("help should name ctrl+n:\n%s", out)
+	if !strings.Contains(out, "ctrl+s create") {
+		t.Errorf("help should name ctrl+s:\n%s", out)
 	}
 	if strings.Contains(out, "ctrl+d") {
 		t.Errorf("help should no longer mention ctrl+d:\n%s", out)
 	}
 }
 
-var keySave = tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl}
+var (
+	keyRight = tea.KeyPressMsg{Code: tea.KeyRight}
+	keyLeft  = tea.KeyPressMsg{Code: tea.KeyLeft}
+)
 
-// The edit form starts with the issue's text, saves on ctrl+s, and treats
-// ctrl+n as an ordinary key.
-func TestEditFormPrefillsAndSaves(t *testing.T) {
-	iss := ghclient.Issue{Number: 7, Title: "old title", Body: "line one\r\nline two"}
-	m := NewEditForm("o/r", iss, PlainStyles())
-
-	m = press(t, m, keySubmit)
-	if m.done {
-		t.Fatal("ctrl+n must not submit the edit form")
+func samplePriority(current string) *ghclient.PriorityField {
+	return &ghclient.PriorityField{
+		ProjectID: "P", ItemID: "I", FieldID: "F", Current: current,
+		Options: []ghclient.PriorityOption{
+			{ID: "o0", Name: "P0", Color: "RED"},
+			{ID: "o1", Name: "P1", Color: "ORANGE"},
+			{ID: "o2", Name: "P2", Color: "YELLOW"},
+			{ID: "o3", Name: "P∞", Color: "GRAY"},
+		},
 	}
+}
 
-	m = typeInto(t, m, "!")
-	m = press(t, m, keySave)
+func editForm(prio *ghclient.PriorityField) DraftForm {
+	return NewEditForm("o/r", ghclient.Issue{Number: 7, Title: "old title", Body: "line one\r\nline two"}, prio, PlainStyles())
+}
+
+// Both forms save on ctrl+s; the edit form starts with the issue's text.
+func TestEditFormPrefillsAndSaves(t *testing.T) {
+	m := typeInto(t, editForm(nil), "!")
+	m = press(t, m, keySubmit)
 	if !m.done || m.Canceled() {
 		t.Fatal("ctrl+s should save")
 	}
@@ -316,58 +326,136 @@ func TestEditFormPrefillsAndSaves(t *testing.T) {
 	if got.Body != "line one\nline two" {
 		t.Errorf("Body = %q, want LF line endings", got.Body)
 	}
+	if got.PriorityID != "" {
+		t.Errorf("PriorityID = %q, want none without a selector", got.PriorityID)
+	}
 }
 
 func TestEditFormRefusesEmptyTitle(t *testing.T) {
-	m := NewEditForm("o/r", ghclient.Issue{Number: 7, Title: ""}, PlainStyles())
-	if m = press(t, m, keySave); m.done {
+	m := NewEditForm("o/r", ghclient.Issue{Number: 7}, nil, PlainStyles())
+	if m = press(t, m, keySubmit); m.done {
 		t.Error("saving with no title should not complete the form")
 	}
 }
 
 func TestEditFormHeading(t *testing.T) {
-	m := NewEditForm("o/r", ghclient.Issue{Number: 7, Title: "t"}, PlainStyles())
-	v := m.View().Content
-	for _, want := range []string{"edit #7 in o/r", "enter save"} {
+	v := editForm(nil).View().Content
+	for _, want := range []string{"edit #7 in o/r", "ctrl+s save"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("view missing %q:\n%s", want, v)
+		}
+	}
+	if strings.Contains(v, "priority") {
+		t.Errorf("no selector expected without a board:\n%s", v)
+	}
+}
+
+// Enter edits text: it moves on from the title and is a newline in the body.
+func TestEditFormEnterIsText(t *testing.T) {
+	m := press(t, editForm(nil), keyEnter)
+	if m.done || m.focus != focusBody {
+		t.Fatalf("enter in the title should move to the body (done=%v focus=%d)", m.done, m.focus)
+	}
+	m = press(t, m, keyEnter)
+	if m.done {
+		t.Fatal("enter in the body must not save")
+	}
+	if got := m.body.Value(); !strings.HasSuffix(got, "\n") {
+		t.Errorf("body = %q, want a newline added", got)
+	}
+}
+
+func TestEditFormSelectorStartsOnCurrentPriority(t *testing.T) {
+	m := press(t, editForm(samplePriority("o1")), keySubmit)
+	if got := m.Draft().PriorityID; got != "o1" {
+		t.Errorf("PriorityID = %q, want o1", got)
+	}
+}
+
+func TestEditFormSelectorDefaultsToP2(t *testing.T) {
+	m := press(t, editForm(samplePriority("")), keySubmit)
+	if got := m.Draft().PriorityID; got != "o2" {
+		t.Errorf("PriorityID = %q, want o2 (P2)", got)
+	}
+}
+
+// A board without a P2 has nothing to default to, so nothing is chosen.
+func TestEditFormSelectorNoDefaultWithoutP2(t *testing.T) {
+	p := samplePriority("")
+	p.Options = p.Options[:2]
+	m := press(t, editForm(p), keySubmit)
+	if got := m.Draft().PriorityID; got != "" {
+		t.Errorf("PriorityID = %q, want none", got)
+	}
+}
+
+func TestEditFormSelectorMoves(t *testing.T) {
+	// title → body → priority
+	m := press(t, editForm(samplePriority("o2")), keyTab, keyTab)
+	if m.focus != focusPriority {
+		t.Fatalf("focus = %d, want the selector", m.focus)
+	}
+	if m = press(t, m, keyLeft, keyLeft); m.choice != 0 {
+		t.Errorf("choice = %d after two lefts, want 0", m.choice)
+	}
+	if m = press(t, m, keyLeft); m.choice != 3 {
+		t.Errorf("choice = %d, want to wrap to 3", m.choice)
+	}
+	m = press(t, m, keyRight, keyRight)
+	m = press(t, m, keySubmit)
+	if got := m.Draft().PriorityID; got != "o1" {
+		t.Errorf("PriorityID = %q, want o1", got)
+	}
+}
+
+// On the selector, enter does nothing and typing does not reach the text.
+func TestEditFormSelectorIgnoresEnterAndTyping(t *testing.T) {
+	m := press(t, editForm(samplePriority("o2")), keyTab, keyTab, keyEnter)
+	m = typeInto(t, m, "xyz")
+	if m.done {
+		t.Fatal("enter on the selector must not save")
+	}
+	if m.title.Value() != "old title" || m.body.Value() != "line one\nline two" {
+		t.Errorf("typing leaked into the text: %q / %q", m.title.Value(), m.body.Value())
+	}
+}
+
+func TestEditFormTabWraps(t *testing.T) {
+	m := press(t, editForm(samplePriority("o2")), keyTab, keyTab, keyTab)
+	if m.focus != focusTitle {
+		t.Errorf("focus = %d, want to wrap to the title", m.focus)
+	}
+	if m = press(t, editForm(nil), keyTab, keyTab); m.focus != focusTitle {
+		t.Errorf("without a selector two tabs should wrap, focus = %d", m.focus)
+	}
+}
+
+func TestEditFormShowsSelector(t *testing.T) {
+	v := editForm(samplePriority("o2")).View().Content
+	for _, want := range []string{"priority", "P0", "[P2]", "P∞"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("view missing %q:\n%s", want, v)
 		}
 	}
 }
 
-// Editing, enter saves from either field; a newline in the body is alt+enter.
-func TestEditFormEnterSavesFromTitleAndBody(t *testing.T) {
-	iss := ghclient.Issue{Number: 7, Title: "t", Body: "b"}
-
-	m := press(t, NewEditForm("o/r", iss, PlainStyles()), keyEnter)
-	if !m.done || m.Canceled() {
-		t.Error("enter in the title should save and close")
+// The new-issue form takes the same selector, defaulting to P2.
+func TestNewFormSelectorDefaultsToP2(t *testing.T) {
+	m := NewDraftForm("o/r", nil, PlainStyles()).WithPriority(samplePriority(""))
+	m = typeInto(t, m, "a title")
+	if m.fields() != 3 {
+		t.Fatalf("fields = %d, want 3", m.fields())
 	}
-
-	m = press(t, NewEditForm("o/r", iss, PlainStyles()), keyTab, keyEnter)
-	if !m.done || m.Canceled() {
-		t.Error("enter in the body should save and close")
-	}
-	if m.Draft().Body != "b" {
-		t.Errorf("Body = %q, enter must not insert a newline", m.Draft().Body)
+	m = press(t, m, keySubmit)
+	if got := m.Draft().PriorityID; got != "o2" {
+		t.Errorf("PriorityID = %q, want o2 (P2)", got)
 	}
 }
 
-func TestEditFormAltEnterInsertsNewline(t *testing.T) {
-	iss := ghclient.Issue{Number: 7, Title: "t", Body: "b"}
-	m := NewEditForm("o/r", iss, PlainStyles())
-	m = press(t, m, keyTab, tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModAlt})
-	if m.done {
-		t.Fatal("alt+enter should not save")
-	}
-	if got := m.body.Value(); !strings.Contains(got, "\n") {
-		t.Errorf("body = %q, want a newline", got)
-	}
-}
-
-func TestEditFormEnterRefusesEmptyTitle(t *testing.T) {
-	m := NewEditForm("o/r", ghclient.Issue{Number: 7}, PlainStyles())
-	if m = press(t, m, keyEnter); m.done {
-		t.Error("enter with no title should not save")
+func TestNewFormWithoutPriorityHasNoSelector(t *testing.T) {
+	m := typeInto(t, NewDraftForm("o/r", nil, PlainStyles()).WithPriority(nil), "a title")
+	m = press(t, m, keySubmit)
+	if got := m.Draft().PriorityID; got != "" {
+		t.Errorf("PriorityID = %q, want none", got)
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/justin-efficient/enzo/internal/config"
 	"github.com/justin-efficient/enzo/internal/ghclient"
 	"github.com/justin-efficient/enzo/internal/gitrepo"
 	"github.com/justin-efficient/enzo/internal/ui"
@@ -106,7 +107,7 @@ func runNew(ctx context.Context, env Env, root string, client ghclient.Client, l
 		return nil, err
 	}
 
-	draft, err := draftFor(env, slug.String(), parent, req.title, req.body)
+	draft, prio, err := draftFor(ctx, env, client, boardRef(env, root), slug, login, parent, req.title, req.body)
 	if err != nil {
 		return nil, err
 	}
@@ -138,7 +139,30 @@ func runNew(ctx context.Context, env Env, root string, client ghclient.Client, l
 		issue.ParentRepo, issue.ParentNumber = slug.String(), parent.Number
 	}
 
+	if prio != nil && draft.PriorityID != "" {
+		if err := prioritizeNew(ctx, env, root, client, slug, prio, draft.PriorityID, issue); err != nil {
+			return nil, fmt.Errorf("created #%d but could not set its priority: %w", issue.Number, err)
+		}
+	}
+
 	return &issue, nil
+}
+
+// prioritizeNew puts a new issue on the board and sets its priority. Adding
+// is idempotent, so a board that auto-adds issues is no problem.
+func prioritizeNew(ctx context.Context, env Env, root string, client ghclient.Client, slug gitrepo.Slug, prio *ghclient.PriorityField, optionID string, issue ghclient.Issue) error {
+	item, err := client.AddToProject(ctx, prio.ProjectID, issue.NodeID)
+	if err != nil {
+		return err
+	}
+	field := *prio
+	field.ItemID = item
+	if err := client.SetPriority(ctx, field, optionID); err != nil {
+		return err
+	}
+	record(env, root, slug.String(), "prioritized",
+		fmt.Sprintf("#%d %s", issue.Number, optionName(prio, optionID)), issue.URL)
+	return nil
 }
 
 // parseSubArgs pulls the leading "sub [number]" off args, leaving the title and
@@ -255,21 +279,27 @@ func resolveParent(ctx context.Context, env Env, client ghclient.Client, slug gi
 	return &res.Issue, nil
 }
 
-// draftFor takes the title and body from flags, or asks for them.
-func draftFor(env Env, repo string, parent *ghclient.Issue, title, body string) (ui.Draft, error) {
+// draftFor takes the title and body from flags, or asks for them. When it
+// asks, the form offers a priority selector if a board to put it on can be
+// found, and that field is returned so the caller can act on the choice.
+func draftFor(ctx context.Context, env Env, client ghclient.Client, ref *config.ProjectRef, slug gitrepo.Slug, login string, parent *ghclient.Issue, title, body string) (ui.Draft, *ghclient.PriorityField, error) {
 	if strings.TrimSpace(title) != "" {
-		return ui.Draft{Title: strings.TrimSpace(title), Body: strings.TrimSpace(body)}, nil
+		return ui.Draft{Title: strings.TrimSpace(title), Body: strings.TrimSpace(body)}, nil, nil
 	}
 	if !env.Interactive {
-		return ui.Draft{}, errors.New("no title given: pass --title")
+		return ui.Draft{}, nil, errors.New("no title given: pass --title")
 	}
-	draft, err := env.AskDraft(repo, parent)
+	// The selector is a convenience: a token that cannot read boards, or no
+	// board to be found, gets a form without it.
+	prio := newIssueBoard(ctx, client, ref, slug, login)
+
+	draft, err := env.AskDraft(slug.String(), parent, prio)
 	if err != nil {
-		return ui.Draft{}, err
+		return ui.Draft{}, nil, err
 	}
 	// Trim here rather than trusting the form, so a whitespace-only title is
 	// treated as backing out.
 	draft.Title = strings.TrimSpace(draft.Title)
 	draft.Body = strings.TrimSpace(draft.Body)
-	return draft, nil
+	return draft, prio, nil
 }

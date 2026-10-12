@@ -18,7 +18,9 @@ import (
 // Issue is the subset of a GitHub issue enzo displays.
 type Issue struct {
 	// ID is GitHub's database id. Sub-issue links are made by id, not number.
-	ID     int64
+	ID int64
+	// NodeID is GitHub's GraphQL id for the issue.
+	NodeID string
 	Number int
 	Title  string
 	Body   string
@@ -62,6 +64,27 @@ type Client interface {
 	// Priorities maps issue number to its Projects v2 "Priority" value for
 	// the open issues assigned to login. Issues without one are absent.
 	Priorities(ctx context.Context, slug gitrepo.Slug, login string) (map[int]Priority, error)
+	// IssuePriorityField returns what is needed to read and set one issue's
+	// board priority, or nil when it is on no board with a Priority field. A
+	// non-empty projectID restricts it to that board.
+	IssuePriorityField(ctx context.Context, slug gitrepo.Slug, number int, projectID string) (*PriorityField, error)
+	// ProjectPriorityField reads a board's Priority field by owner and number,
+	// with no board item. It is nil when the board is missing, closed, or has
+	// no such field.
+	ProjectPriorityField(ctx context.Context, owner string, number int) (*PriorityField, error)
+	// CandidateBoards lists the boards with a Priority field that a repo's
+	// priorities could live on, linked boards first.
+	CandidateBoards(ctx context.Context, slug gitrepo.Slug, login string) ([]Board, error)
+	// BoardPriorityField returns the Priority field of the board a new issue
+	// would be prioritized on, found from the issues assigned to login, or nil
+	// when there is none. It has no board item yet.
+	BoardPriorityField(ctx context.Context, slug gitrepo.Slug, login string) (*PriorityField, error)
+	// AddToProject puts the issue with GraphQL id contentID on a board and
+	// returns the board item. It is idempotent.
+	AddToProject(ctx context.Context, projectID, contentID string) (string, error)
+	// SetPriority sets the priority described by f to the option with
+	// optionID.
+	SetPriority(ctx context.Context, f PriorityField, optionID string) error
 	// OpenIssues lists every open issue in slug, newest activity first. Pull
 	// requests are excluded. It is what `enzo new sub` offers as parents.
 	OpenIssues(ctx context.Context, slug gitrepo.Slug) ([]Issue, error)
@@ -189,6 +212,7 @@ func convert(iss *github.Issue) Issue {
 	parentRepo, parentNumber := parseIssueURL(iss.GetParentIssueURL())
 	return Issue{
 		ID:        iss.GetID(),
+		NodeID:    iss.GetNodeID(),
 		Number:    iss.GetNumber(),
 		Title:     iss.GetTitle(),
 		Body:      iss.GetBody(),

@@ -129,19 +129,21 @@ func assignedWithPriority(ctx context.Context, client ghclient.Client, slug gitr
 	return out, nil
 }
 
-// runEdit asks for a new title and body and saves them.
+// runEdit asks for a new title, body and priority and saves what changed.
 //
 // The issue is re-read first: the listing lags and may be stale, and saving
 // over a body edited elsewhere a moment ago would silently lose that edit.
 //
-// It returns the saved issue, or nil when nothing was changed.
+// It returns the issue as saved when its text changed, and nil when only the
+// priority did, or nothing.
 func runEdit(ctx context.Context, env Env, root string, client ghclient.Client, slug gitrepo.Slug, listed ghclient.Issue) (*ghclient.Issue, error) {
 	current, err := client.Issue(ctx, slug, listed.Number)
 	if err != nil {
 		return nil, err
 	}
+	prio := issueBoard(ctx, client, boardRef(env, root), slug, current.Number)
 
-	draft, err := env.AskEdit(slug.String(), current)
+	draft, err := env.AskEdit(slug.String(), current, prio)
 	if err != nil {
 		return nil, err
 	}
@@ -149,17 +151,65 @@ func runEdit(ctx context.Context, env Env, root string, client ghclient.Client, 
 	if title == "" {
 		return nil, ErrCanceled
 	}
-	if title == strings.TrimSpace(current.Title) && body == normalizeBody(current.Body) {
-		return nil, nil
+
+	textChanged := title != strings.TrimSpace(current.Title) || body != normalizeBody(current.Body)
+	prioChanged := prio != nil && draft.PriorityID != "" && draft.PriorityID != prio.Current
+	// An issue that is not on the board yet is put there on save, with no
+	// confirmation, whether or not the priority is changed.
+	pullIn := prio != nil && prio.ItemID == ""
+
+	var saved *ghclient.Issue
+	if textChanged {
+		iss, err := client.UpdateIssue(ctx, slug, current.Number, ghclient.IssueEdit{Title: title, Body: body})
+		if err != nil {
+			return nil, err
+		}
+		record(env, root, slug.String(), "edited",
+			fmt.Sprintf("#%d %s", iss.Number, iss.Title), iss.URL)
+		saved = &iss
 	}
 
-	saved, err := client.UpdateIssue(ctx, slug, current.Number, ghclient.IssueEdit{Title: title, Body: body})
-	if err != nil {
-		return nil, err
+	if pullIn || prioChanged {
+		if err := prioritizeEdit(ctx, env, root, client, slug, current, prio, draft.PriorityID, pullIn, prioChanged); err != nil {
+			if saved != nil {
+				return saved, fmt.Errorf("saved #%d but %w", current.Number, err)
+			}
+			return nil, err
+		}
 	}
-	record(env, root, slug.String(), "edited",
-		fmt.Sprintf("#%d %s", saved.Number, saved.Title), saved.URL)
-	return &saved, nil
+	return saved, nil
+}
+
+// prioritizeEdit puts an issue on the board when it is not there and sets its
+// priority when that changed.
+func prioritizeEdit(ctx context.Context, env Env, root string, client ghclient.Client, slug gitrepo.Slug, issue ghclient.Issue, prio *ghclient.PriorityField, optionID string, pullIn, setIt bool) error {
+	field := *prio
+	if pullIn {
+		item, err := client.AddToProject(ctx, prio.ProjectID, issue.NodeID)
+		if err != nil {
+			return fmt.Errorf("could not add #%d to the board: %w", issue.Number, err)
+		}
+		field.ItemID = item
+		record(env, root, slug.String(), "boarded", fmt.Sprintf("#%d %s", issue.Number, issue.Title), issue.URL)
+	}
+	if setIt {
+		if err := client.SetPriority(ctx, field, optionID); err != nil {
+			return fmt.Errorf("could not set the priority of #%d: %w", issue.Number, err)
+		}
+		record(env, root, slug.String(), "prioritized",
+			fmt.Sprintf("#%d %s", issue.Number, optionName(prio, optionID)), issue.URL)
+	}
+	return nil
+}
+
+// optionName is the name of the option with id, for the log.
+func optionName(f *ghclient.PriorityField, id string) string {
+	for _, o := range f.Options {
+		if o.ID == id {
+			return o.Name
+		}
+	}
+	return id
 }
 
 // normalizeBody makes bodies comparable: GitHub often stores CRLF, the form

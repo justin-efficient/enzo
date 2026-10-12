@@ -35,7 +35,7 @@ func DefaultStyles() Styles {
 	}
 	st.PriorityNumber = func(color string) lipgloss.Style {
 		if c, ok := priorityColors[color]; ok {
-			return lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(c))
+			return lipgloss.NewStyle().Foreground(lipgloss.Color(c))
 		}
 		return st.Number
 	}

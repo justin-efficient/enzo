@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/justin-efficient/enzo/internal/config"
+	"github.com/justin-efficient/enzo/internal/ghclient"
+	"github.com/justin-efficient/enzo/internal/gitrepo"
 )
 
 // Setup writes the repo's .enzo file after checking the token works.
@@ -63,7 +65,9 @@ func Setup(ctx context.Context, env Env, args []string) error {
 	cfg := &config.Config{Token: tok, Host: h}
 	if existing != nil {
 		cfg.DefaultReviewers = existing.DefaultReviewers
+		cfg.Project = existing.Project
 	}
+	board, others := pickBoard(ctx, client, slug, login, cfg)
 	if err := config.Save(root, cfg); err != nil {
 		return err
 	}
@@ -82,11 +86,57 @@ func Setup(ctx context.Context, env Env, args []string) error {
 		{"", "authenticated", login},
 		{"", "wrote", config.Path(root)},
 	}
+	if board != nil {
+		rr = append(rr, row{"", "board", fmt.Sprintf("%s (#%d), for priorities", board.Title, board.Number)})
+		if len(others) > 0 {
+			rr = append(rr, row{"", "other boards", others + " — edit \"project\" in " + config.FileName + " to use one"})
+		}
+	}
 	if added {
 		rr = append(rr, row{"", "added", config.FileName + " to .gitignore"})
 	}
 	rows(env.Stdout, rr...)
 	return nil
+}
+
+// pickBoard settles which board priorities live on and records it in cfg. A
+// board already pinned stays, so re-running setup does not move it; otherwise it
+// is the first candidate, linked boards before the ones your issues are on.
+//
+// Priority is a convenience, so a token that cannot read boards, or none being
+// found, leaves cfg without a board and setup otherwise unchanged. others lists
+// the remaining candidates for the report.
+func pickBoard(ctx context.Context, client ghclient.Client, slug gitrepo.Slug, login string, cfg *config.Config) (chosen *ghclient.Board, others string) {
+	boards, err := client.CandidateBoards(ctx, slug, login)
+	if err != nil || len(boards) == 0 {
+		return nil, ""
+	}
+
+	pick := 0
+	if cfg.Project != nil {
+		pick = -1
+		for i, b := range boards {
+			if b.Owner == cfg.Project.Owner && b.Number == cfg.Project.Number {
+				pick = i
+				break
+			}
+		}
+		if pick < 0 {
+			// Pinned, but not among what was found: it was chosen by hand
+			// or the guess has moved. Either way, leave it alone.
+			return nil, ""
+		}
+	}
+	chosen = &boards[pick]
+	cfg.Project = &config.ProjectRef{Owner: chosen.Owner, Number: chosen.Number}
+
+	var rest []string
+	for i, b := range boards {
+		if i != pick {
+			rest = append(rest, fmt.Sprintf("%s (#%d)", b.Title, b.Number))
+		}
+	}
+	return chosen, strings.Join(rest, ", ")
 }
 
 // readToken gets a token interactively, or from stdin when piped.

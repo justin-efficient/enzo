@@ -29,6 +29,32 @@ type fakeClient struct {
 	priorities    map[int]ghclient.Priority
 	prioritiesErr error
 
+	// prioField backs IssuePriorityField; setPriority records SetPriority.
+	prioField     *ghclient.PriorityField
+	prioFieldErr  error
+	setPrioErr    error
+	setPrioCalls  int
+	setPrioOption string
+
+	// projectField backs ProjectPriorityField, the pinned board; boards backs
+	// CandidateBoards.
+	projectField     *ghclient.PriorityField
+	projectFieldErr  error
+	gotProjectOwner  string
+	gotProjectNumber int
+	gotPrioProject   string
+	boards           []ghclient.Board
+	boardsErr        error
+
+	// boardField backs BoardPriorityField; addToProject records AddToProject.
+	boardField    *ghclient.PriorityField
+	boardFieldErr error
+	addErr        error
+	addCalls      int
+	addedProject  string
+	addedContent  string
+	setPrioItem   string
+
 	// openIssues backs OpenIssues; nil falls back to issues.
 	openIssues []ghclient.Issue
 	openErr    error
@@ -186,6 +212,49 @@ func (f *fakeClient) Priorities(context.Context, gitrepo.Slug, string) (map[int]
 	return f.priorities, f.prioritiesErr
 }
 
+func (f *fakeClient) IssuePriorityField(_ context.Context, _ gitrepo.Slug, _ int, projectID string) (*ghclient.PriorityField, error) {
+	f.gotPrioProject = projectID
+	if f.prioFieldErr != nil {
+		return nil, f.prioFieldErr
+	}
+	return f.prioField, nil
+}
+
+func (f *fakeClient) ProjectPriorityField(_ context.Context, owner string, number int) (*ghclient.PriorityField, error) {
+	f.gotProjectOwner, f.gotProjectNumber = owner, number
+	if f.projectFieldErr != nil {
+		return nil, f.projectFieldErr
+	}
+	return f.projectField, nil
+}
+
+func (f *fakeClient) CandidateBoards(context.Context, gitrepo.Slug, string) ([]ghclient.Board, error) {
+	return f.boards, f.boardsErr
+}
+
+func (f *fakeClient) SetPriority(_ context.Context, field ghclient.PriorityField, option string) error {
+	f.setPrioCalls++
+	f.setPrioItem = field.ItemID
+	f.setPrioOption = option
+	return f.setPrioErr
+}
+
+func (f *fakeClient) BoardPriorityField(context.Context, gitrepo.Slug, string) (*ghclient.PriorityField, error) {
+	if f.boardFieldErr != nil {
+		return nil, f.boardFieldErr
+	}
+	return f.boardField, nil
+}
+
+func (f *fakeClient) AddToProject(_ context.Context, project, content string) (string, error) {
+	f.addCalls++
+	f.addedProject, f.addedContent = project, content
+	if f.addErr != nil {
+		return "", f.addErr
+	}
+	return "item-for-" + content, nil
+}
+
 func (f *fakeClient) OpenIssues(_ context.Context, slug gitrepo.Slug) ([]ghclient.Issue, error) {
 	f.gotSlug = slug
 	if f.openErr != nil {
@@ -215,7 +284,7 @@ func (f *fakeClient) CreateIssue(_ context.Context, slug gitrepo.Slug, in ghclie
 	}
 	out := f.created
 	if out.Number == 0 {
-		out = ghclient.Issue{ID: 9001, Number: 99, Title: in.Title, URL: "https://github.com/justin-efficient/enzo/issues/99"}
+		out = ghclient.Issue{ID: 9001, NodeID: "node-99", Number: 99, Title: in.Title, URL: "https://github.com/justin-efficient/enzo/issues/99"}
 	}
 	f.lastCreated, f.pollsSince = &out, 0
 	return out, nil
@@ -315,6 +384,7 @@ type harness struct {
 	draftErr      error
 	draftCalls    int
 	draftedParent *ghclient.Issue
+	draftedPrio   *ghclient.PriorityField
 
 	// edited is what the edit form returns, and editedIssue what it was
 	// shown.
@@ -322,6 +392,7 @@ type harness struct {
 	editErr     error
 	editCalls   int
 	editedIssue ghclient.Issue
+	editedPrio  *ghclient.PriorityField
 }
 
 // newHarness builds a temp git repo with an origin remote and an Env wired to
@@ -396,14 +467,14 @@ func newHarness(t *testing.T, remote string) *harness {
 			h.pickedParentIssues = issues
 			return h.pickedParent, h.pickParentErr
 		},
-		AskDraft: func(repo string, parent *ghclient.Issue) (ui.Draft, error) {
+		AskDraft: func(repo string, parent *ghclient.Issue, prio *ghclient.PriorityField) (ui.Draft, error) {
 			h.draftCalls++
-			h.draftedParent = parent
+			h.draftedParent, h.draftedPrio = parent, prio
 			return h.drafted, h.draftErr
 		},
-		AskEdit: func(repo string, issue ghclient.Issue) (ui.Draft, error) {
+		AskEdit: func(repo string, issue ghclient.Issue, prio *ghclient.PriorityField) (ui.Draft, error) {
 			h.editCalls++
-			h.editedIssue = issue
+			h.editedIssue, h.editedPrio = issue, prio
 			return h.edited, h.editErr
 		},
 		Await: func(message string, poll func() (bool, error)) error {

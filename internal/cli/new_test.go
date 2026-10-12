@@ -566,3 +566,110 @@ func TestSplitLeadingPositional(t *testing.T) {
 		})
 	}
 }
+
+var newBoard = &ghclient.PriorityField{
+	ProjectID: "proj-1", FieldID: "F",
+	Options: []ghclient.PriorityOption{{ID: "o0", Name: "P0", Color: "RED"}, {ID: "o2", Name: "P2", Color: "YELLOW"}},
+}
+
+// A chosen priority puts the new issue on the board and sets it, using the
+// item the board returns.
+func TestNewSetsPriority(t *testing.T) {
+	h := newReady(t)
+	h.env.Interactive = true
+	h.client.boardField = newBoard
+	h.drafted = ui.Draft{Title: "t", PriorityID: "o2"}
+
+	if err := New(context.Background(), h.env, nil); err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if h.draftedPrio != newBoard {
+		t.Error("the form should be offered the board's priority field")
+	}
+	if h.client.addedProject != "proj-1" || h.client.addedContent != "node-99" {
+		t.Errorf("added %q to %q", h.client.addedContent, h.client.addedProject)
+	}
+	if h.client.setPrioCalls != 1 || h.client.setPrioOption != "o2" || h.client.setPrioItem != "item-for-node-99" {
+		t.Errorf("SetPriority calls=%d option=%q item=%q", h.client.setPrioCalls, h.client.setPrioOption, h.client.setPrioItem)
+	}
+	if got := h.findLogged(t, "prioritized"); !strings.Contains(got.Text, "P2") {
+		t.Errorf("log text %q", got.Text)
+	}
+}
+
+// With no board to be found, or one that cannot be read, the form has no
+// selector and nothing is added anywhere.
+func TestNewWithoutBoardHasNoSelector(t *testing.T) {
+	for name, set := range map[string]func(*harness){
+		"no board":   func(h *harness) { h.client.boardField = nil },
+		"read error": func(h *harness) { h.client.boardFieldErr = errBoom },
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := newReady(t)
+			h.env.Interactive = true
+			set(h)
+			h.drafted = ui.Draft{Title: "t", PriorityID: "o2"}
+
+			if err := New(context.Background(), h.env, nil); err != nil {
+				t.Fatalf("New: %v", err)
+			}
+			if h.draftedPrio != nil || h.client.addCalls != 0 || h.client.setPrioCalls != 0 {
+				t.Errorf("prio=%v adds=%d sets=%d, want none", h.draftedPrio, h.client.addCalls, h.client.setPrioCalls)
+			}
+		})
+	}
+}
+
+// Flags skip the form, so there is no selector and no board is touched.
+func TestNewWithTitleFlagSetsNoPriority(t *testing.T) {
+	h := newReady(t)
+	h.env.Interactive = true
+	h.client.boardField = newBoard
+
+	if err := New(context.Background(), h.env, []string{"--title", "t"}); err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if h.client.addCalls != 0 || h.client.setPrioCalls != 0 {
+		t.Error("a title from flags must not touch a board")
+	}
+}
+
+// The issue exists by then, and the error says so.
+func TestNewPriorityFailureNamesTheIssue(t *testing.T) {
+	for name, set := range map[string]func(*harness){
+		"add fails": func(h *harness) { h.client.addErr = errBoom },
+		"set fails": func(h *harness) { h.client.setPrioErr = errBoom },
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := newReady(t)
+			h.env.Interactive = true
+			h.client.boardField = newBoard
+			set(h)
+			h.drafted = ui.Draft{Title: "t", PriorityID: "o2"}
+
+			err := New(context.Background(), h.env, nil)
+			requireErrorContains(t, err, "created #99")
+			requireErrorContains(t, err, "boom")
+		})
+	}
+}
+
+// The pinned board wins over the guess.
+func TestNewUsesPinnedBoard(t *testing.T) {
+	h := newReady(t)
+	seedConfig(t, h, &config.Config{Token: "t", Project: &config.ProjectRef{Owner: "EfficientComputer", Number: 12}})
+	h.env.Interactive = true
+	h.client.projectField = newBoard
+	h.client.boardField = &ghclient.PriorityField{ProjectID: "guessed", Options: newBoard.Options}
+	h.drafted = ui.Draft{Title: "t", PriorityID: "o2"}
+
+	if err := New(context.Background(), h.env, nil); err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if h.client.addedProject != "proj-1" {
+		t.Errorf("added to %q, want the pinned proj-1", h.client.addedProject)
+	}
+	if h.client.gotProjectNumber != 12 {
+		t.Errorf("read board #%d, want 12", h.client.gotProjectNumber)
+	}
+}

@@ -967,3 +967,242 @@ func TestListSurvivesPriorityFailure(t *testing.T) {
 		t.Errorf("unexpected stderr: %s", h.stderr.String())
 	}
 }
+
+var testPrio = &ghclient.PriorityField{
+	ProjectID: "P", ItemID: "I", FieldID: "F", Current: "o2",
+	Options: []ghclient.PriorityOption{{ID: "o0", Name: "P0", Color: "RED"}, {ID: "o2", Name: "P2", Color: "YELLOW"}},
+}
+
+func editHarness(t *testing.T) *harness {
+	t.Helper()
+	h := newHarness(t, defaultRemote)
+	seedConfig(t, h, &config.Config{Token: "t"})
+	h.client.issues = append([]ghclient.Issue{}, listIssues...)
+	h.client.byNumber = map[int]ghclient.Issue{12: listIssues[0]}
+	h.client.prioField = testPrio
+	h.env.Interactive = true
+	h.picked = ui.Result{Action: ui.ActionEdit, Issue: listIssues[0]}
+	return h
+}
+
+// A priority-only change writes the priority and nothing else, and has no
+// text for the listing to catch up with.
+func TestListEditChangesOnlyPriority(t *testing.T) {
+	h := editHarness(t)
+	h.edited = ui.Draft{Title: "fix the thing", PriorityID: "o0"}
+
+	if err := List(context.Background(), h.env, nil); err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if h.editedPrio != testPrio {
+		t.Error("the form should be given the issue's priority field")
+	}
+	if h.client.setPrioCalls != 1 || h.client.setPrioOption != "o0" {
+		t.Errorf("SetPriority calls=%d option=%q", h.client.setPrioCalls, h.client.setPrioOption)
+	}
+	if h.client.updateCalls != 0 || h.awaitCalls != 0 {
+		t.Errorf("text writes=%d waits=%d, want none", h.client.updateCalls, h.awaitCalls)
+	}
+	if got := h.findLogged(t, "prioritized"); !strings.Contains(got.Text, "P0") {
+		t.Errorf("log text %q", got.Text)
+	}
+}
+
+func TestListEditSavesTextAndPriority(t *testing.T) {
+	h := editHarness(t)
+	h.edited = ui.Draft{Title: "renamed", PriorityID: "o0"}
+
+	if err := List(context.Background(), h.env, nil); err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if h.client.updateCalls != 1 || h.client.setPrioCalls != 1 {
+		t.Errorf("updates=%d priorities=%d, want 1 and 1", h.client.updateCalls, h.client.setPrioCalls)
+	}
+}
+
+// Leaving the selector on what the issue already has writes nothing.
+func TestListEditSamePriorityWritesNothing(t *testing.T) {
+	h := editHarness(t)
+	h.edited = ui.Draft{Title: "fix the thing", PriorityID: "o2"}
+
+	if err := List(context.Background(), h.env, nil); err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if h.client.setPrioCalls != 0 || h.client.updateCalls != 0 {
+		t.Errorf("writes: priority=%d text=%d, want none", h.client.setPrioCalls, h.client.updateCalls)
+	}
+}
+
+// No board, or a token that cannot read boards, means a form with no selector.
+func TestListEditWithoutBoardHasNoSelector(t *testing.T) {
+	for name, set := range map[string]func(*harness){
+		"no board":   func(h *harness) { h.client.prioField = nil },
+		"read error": func(h *harness) { h.client.prioFieldErr = errBoom },
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := editHarness(t)
+			set(h)
+			h.edited = ui.Draft{Title: "fix the thing", PriorityID: "o0"}
+
+			if err := List(context.Background(), h.env, nil); err != nil {
+				t.Fatalf("List: %v", err)
+			}
+			if h.editedPrio != nil {
+				t.Error("the form should get no priority field")
+			}
+			if h.client.setPrioCalls != 0 {
+				t.Error("nothing to set without a board")
+			}
+		})
+	}
+}
+
+// The text was saved before the priority failed, and the error says so.
+func TestListEditPriorityFailureAfterTextSaved(t *testing.T) {
+	h := editHarness(t)
+	h.client.setPrioErr = errBoom
+	h.edited = ui.Draft{Title: "renamed", PriorityID: "o0"}
+
+	err := List(context.Background(), h.env, nil)
+	requireErrorContains(t, err, "saved #12")
+	requireErrorContains(t, err, "boom")
+	if h.client.updateCalls != 1 {
+		t.Errorf("text writes = %d, want 1", h.client.updateCalls)
+	}
+}
+
+var testPinned = &ghclient.PriorityField{
+	ProjectID: "proj-1", FieldID: "F",
+	Options: []ghclient.PriorityOption{{ID: "o0", Name: "P0", Color: "RED"}, {ID: "o2", Name: "P2", Color: "YELLOW"}},
+}
+
+func pinnedHarness(t *testing.T) *harness {
+	t.Helper()
+	h := newHarness(t, defaultRemote)
+	seedConfig(t, h, &config.Config{Token: "t", Project: &config.ProjectRef{Owner: "EfficientComputer", Number: 12}})
+	h.client.issues = append([]ghclient.Issue{}, listIssues...)
+	h.client.byNumber = map[int]ghclient.Issue{12: {NodeID: "node-12", Number: 12, Title: "fix the thing", URL: listIssues[0].URL}}
+	h.client.projectField = testPinned
+	h.env.Interactive = true
+	h.picked = ui.Result{Action: ui.ActionEdit, Issue: listIssues[0]}
+	return h
+}
+
+// An issue that is not on the pinned board is added on save, then prioritized
+// using the item the board returns. No confirmation is asked for.
+func TestListEditPullsUnboardedIssueIn(t *testing.T) {
+	h := pinnedHarness(t)
+	h.edited = ui.Draft{Title: "fix the thing", PriorityID: "o2"}
+
+	if err := List(context.Background(), h.env, nil); err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if h.client.gotProjectOwner != "EfficientComputer" || h.client.gotProjectNumber != 12 {
+		t.Errorf("read board %s/%d", h.client.gotProjectOwner, h.client.gotProjectNumber)
+	}
+	if h.editedPrio == nil || h.editedPrio.ItemID != "" {
+		t.Errorf("the form should get the board with no item, got %+v", h.editedPrio)
+	}
+	if h.client.addedProject != "proj-1" || h.client.addedContent != "node-12" {
+		t.Errorf("added %q to %q", h.client.addedContent, h.client.addedProject)
+	}
+	if h.client.setPrioItem != "item-for-node-12" || h.client.setPrioOption != "o2" {
+		t.Errorf("SetPriority item=%q option=%q", h.client.setPrioItem, h.client.setPrioOption)
+	}
+	h.findLogged(t, "boarded")
+}
+
+// The board is the point of saving: with no priority chosen and no text
+// changed, the issue is still pulled in.
+func TestListEditPullsInEvenWithNothingElseChanged(t *testing.T) {
+	h := pinnedHarness(t)
+	h.edited = ui.Draft{Title: "fix the thing"}
+
+	if err := List(context.Background(), h.env, nil); err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if h.client.addCalls != 1 {
+		t.Errorf("AddToProject calls = %d, want 1", h.client.addCalls)
+	}
+	if h.client.setPrioCalls != 0 || h.client.updateCalls != 0 {
+		t.Errorf("priority=%d text=%d writes, want none", h.client.setPrioCalls, h.client.updateCalls)
+	}
+}
+
+// Backing out adds nothing.
+func TestListEditCanceledDoesNotPullIn(t *testing.T) {
+	h := pinnedHarness(t)
+	h.editErr = ErrCanceled
+
+	if err := List(context.Background(), h.env, nil); err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if h.client.addCalls != 0 {
+		t.Error("a canceled edit must not add the issue to the board")
+	}
+}
+
+// An issue already on the pinned board keeps its own item and is not re-added.
+func TestListEditOnPinnedBoardAlreadyThere(t *testing.T) {
+	h := pinnedHarness(t)
+	h.client.prioField = &ghclient.PriorityField{
+		ProjectID: "proj-1", ItemID: "item-12", FieldID: "F", Current: "o2", Options: testPinned.Options,
+	}
+	h.edited = ui.Draft{Title: "fix the thing", PriorityID: "o0"}
+
+	if err := List(context.Background(), h.env, nil); err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if h.client.gotPrioProject != "proj-1" {
+		t.Errorf("looked for the issue on board %q, want proj-1", h.client.gotPrioProject)
+	}
+	if h.client.addCalls != 0 {
+		t.Error("an issue already on the board must not be added again")
+	}
+	if h.client.setPrioItem != "item-12" || h.client.setPrioOption != "o0" {
+		t.Errorf("SetPriority item=%q option=%q", h.client.setPrioItem, h.client.setPrioOption)
+	}
+}
+
+// Without a pinned board an unboarded issue gets no selector and is not added
+// anywhere: there is nowhere to put it.
+func TestListEditUnpinnedUnboardedIssueIsLeftAlone(t *testing.T) {
+	h := editHarness(t)
+	h.client.prioField = nil
+	h.edited = ui.Draft{Title: "fix the thing"}
+
+	if err := List(context.Background(), h.env, nil); err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if h.client.addCalls != 0 || h.editedPrio != nil {
+		t.Errorf("adds=%d prio=%v, want none", h.client.addCalls, h.editedPrio)
+	}
+}
+
+// If the pinned board cannot be read, the issue's own board is used as before.
+func TestListEditFallsBackWhenPinnedBoardUnreadable(t *testing.T) {
+	h := pinnedHarness(t)
+	h.client.projectFieldErr = errBoom
+	h.client.prioField = testPrio
+	h.edited = ui.Draft{Title: "fix the thing", PriorityID: "o2"}
+
+	if err := List(context.Background(), h.env, nil); err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if h.editedPrio != testPrio {
+		t.Error("the form should get the issue's own board")
+	}
+	if h.client.addCalls != 0 {
+		t.Error("nothing to add: the issue is on that board")
+	}
+}
+
+func TestListEditAddFailureAfterTextSaved(t *testing.T) {
+	h := pinnedHarness(t)
+	h.client.addErr = errBoom
+	h.edited = ui.Draft{Title: "renamed", PriorityID: "o2"}
+
+	err := List(context.Background(), h.env, nil)
+	requireErrorContains(t, err, "saved #12")
+	requireErrorContains(t, err, "add #12 to the board")
+}

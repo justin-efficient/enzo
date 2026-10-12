@@ -46,11 +46,13 @@ type Env struct {
 	// PickParent runs the parent-issue picker for `enzo new sub`.
 	PickParent func(repo string, issues []ghclient.Issue) (ui.Result, error)
 
-	// AskDraft runs the new-issue form. parent may be nil.
-	AskDraft func(repo string, parent *ghclient.Issue) (ui.Draft, error)
+	// AskDraft runs the new-issue form. parent and prio may be nil; prio is the
+	// board field to offer a priority selector for.
+	AskDraft func(repo string, parent *ghclient.Issue, prio *ghclient.PriorityField) (ui.Draft, error)
 
 	// AskEdit runs the edit form, filled in with the issue's title and body.
-	AskEdit func(repo string, issue ghclient.Issue) (ui.Draft, error)
+	// prio is nil when the issue is on no board with a Priority field.
+	AskEdit func(repo string, issue ghclient.Issue, prio *ghclient.PriorityField) (ui.Draft, error)
 
 	// Await shows a spinner while poll is retried, until it reports true.
 	Await func(message string, poll func() (bool, error)) error
