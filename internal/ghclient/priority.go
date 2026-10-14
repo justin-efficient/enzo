@@ -110,6 +110,9 @@ type PriorityField struct {
 	Options   []PriorityOption
 	// Current is the ID of the option set now, or empty when none is.
 	Current string
+	// Iteration is the same board's Iteration field, or nil when it has none.
+	// It rides along because it shares the board and the item.
+	Iteration *IterationField
 }
 
 const priorityFieldQuery = `

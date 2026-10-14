@@ -443,8 +443,8 @@ func TestEditFormShowsSelector(t *testing.T) {
 func TestNewFormSelectorDefaultsToP2(t *testing.T) {
 	m := NewDraftForm("o/r", nil, PlainStyles()).WithPriority(samplePriority(""))
 	m = typeInto(t, m, "a title")
-	if m.fields() != 3 {
-		t.Fatalf("fields = %d, want 3", m.fields())
+	if len(m.order()) != 3 {
+		t.Fatalf("fields = %d, want 3", len(m.order()))
 	}
 	m = press(t, m, keySubmit)
 	if got := m.Draft().PriorityID; got != "o2" {
@@ -457,5 +457,71 @@ func TestNewFormWithoutPriorityHasNoSelector(t *testing.T) {
 	m = press(t, m, keySubmit)
 	if got := m.Draft().PriorityID; got != "" {
 		t.Errorf("PriorityID = %q, want none", got)
+	}
+}
+
+func sampleIterations(current string) *ghclient.PriorityField {
+	p := samplePriority("o2")
+	p.Iteration = &ghclient.IterationField{
+		FieldID: "IF", Current: current,
+		Options: []ghclient.IterationOption{
+			{ID: "i1", Title: "Iteration 64", Start: time.Date(2026, 10, 19, 0, 0, 0, 0, time.UTC), Days: 21},
+			{ID: "i2", Title: "Iteration 65", Start: time.Date(2026, 11, 9, 0, 0, 0, 0, time.UTC), Days: 21},
+		},
+	}
+	return p
+}
+
+func TestEditFormIterationStartsOnCurrentOrNone(t *testing.T) {
+	m := press(t, editForm(sampleIterations("i2")), keySubmit)
+	if got := m.Draft().IterationID; got != "i2" {
+		t.Errorf("IterationID = %q, want i2", got)
+	}
+	m = press(t, editForm(sampleIterations("")), keySubmit)
+	if got := m.Draft().IterationID; got != "" {
+		t.Errorf("IterationID = %q, want none", got)
+	}
+}
+
+func TestEditFormIterationMoves(t *testing.T) {
+	// title → body → priority → iteration
+	m := press(t, editForm(sampleIterations("")), keyTab, keyTab, keyTab)
+	if m.focus != focusIteration {
+		t.Fatalf("focus = %d, want the iteration selector", m.focus)
+	}
+	m = press(t, m, keyRight)
+	if m.iterChoice != 0 {
+		t.Errorf("iterChoice = %d, want 0", m.iterChoice)
+	}
+	m = press(t, m, keyLeft)
+	if m.iterChoice != 1 {
+		t.Errorf("iterChoice = %d, want to wrap to 1", m.iterChoice)
+	}
+	// Arrows there must not move the priority.
+	if m.choice != 2 {
+		t.Errorf("priority choice = %d, want it untouched at 2", m.choice)
+	}
+	m = press(t, m, keySubmit)
+	if got := m.Draft().IterationID; got != "i2" {
+		t.Errorf("IterationID = %q, want i2", got)
+	}
+}
+
+func TestEditFormIterationTabWraps(t *testing.T) {
+	m := press(t, editForm(sampleIterations("")), keyTab, keyTab, keyTab, keyTab)
+	if m.focus != focusTitle {
+		t.Errorf("focus = %d, want to wrap to the title", m.focus)
+	}
+}
+
+func TestEditFormShowsIteration(t *testing.T) {
+	v := editForm(sampleIterations("i1")).View().Content
+	for _, want := range []string{"iteration", "Iteration 64", "Oct 19 – Nov 8", "1/2"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("view missing %q:\n%s", want, v)
+		}
+	}
+	if v := editForm(sampleIterations("")).View().Content; !strings.Contains(v, "none") {
+		t.Errorf("view should show none:\n%s", v)
 	}
 }

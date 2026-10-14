@@ -139,29 +139,35 @@ func runNew(ctx context.Context, env Env, root string, client ghclient.Client, l
 		issue.ParentRepo, issue.ParentNumber = slug.String(), parent.Number
 	}
 
-	if prio != nil && draft.PriorityID != "" {
-		if err := prioritizeNew(ctx, env, root, client, slug, prio, draft.PriorityID, issue); err != nil {
-			return nil, fmt.Errorf("created #%d but could not set its priority: %w", issue.Number, err)
+	if prio != nil && (draft.PriorityID != "" || draft.IterationID != "") {
+		if err := prioritizeNew(ctx, env, root, client, slug, prio, draft, issue); err != nil {
+			return nil, fmt.Errorf("created #%d but could not set its board fields: %w", issue.Number, err)
 		}
 	}
 
 	return &issue, nil
 }
 
-// prioritizeNew puts a new issue on the board and sets its priority. Adding
-// is idempotent, so a board that auto-adds issues is no problem.
-func prioritizeNew(ctx context.Context, env Env, root string, client ghclient.Client, slug gitrepo.Slug, prio *ghclient.PriorityField, optionID string, issue ghclient.Issue) error {
+// prioritizeNew puts a new issue on the board and sets its priority and
+// iteration. Adding is idempotent, so a board that auto-adds issues is no
+// problem.
+func prioritizeNew(ctx context.Context, env Env, root string, client ghclient.Client, slug gitrepo.Slug, prio *ghclient.PriorityField, draft ui.Draft, issue ghclient.Issue) error {
 	item, err := client.AddToProject(ctx, prio.ProjectID, issue.NodeID)
 	if err != nil {
 		return err
 	}
 	field := *prio
 	field.ItemID = item
-	if err := client.SetPriority(ctx, field, optionID); err != nil {
-		return err
+	if draft.PriorityID != "" {
+		if err := client.SetPriority(ctx, field, draft.PriorityID); err != nil {
+			return err
+		}
+		record(env, root, slug.String(), "prioritized",
+			fmt.Sprintf("#%d %s", issue.Number, optionName(prio, draft.PriorityID)), issue.URL)
 	}
-	record(env, root, slug.String(), "prioritized",
-		fmt.Sprintf("#%d %s", issue.Number, optionName(prio, optionID)), issue.URL)
+	if draft.IterationID != "" && prio.Iteration != nil {
+		return setIteration(ctx, env, root, client, slug, issue, field, draft.IterationID)
+	}
 	return nil
 }
 

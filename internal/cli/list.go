@@ -157,6 +157,8 @@ func runEdit(ctx context.Context, env Env, root string, client ghclient.Client, 
 	// An issue that is not on the board yet is put there on save, with no
 	// confirmation, whether or not the priority is changed.
 	pullIn := prio != nil && prio.ItemID == ""
+	iterChanged := prio != nil && prio.Iteration != nil &&
+		draft.IterationID != "" && draft.IterationID != prio.Iteration.Current
 
 	var saved *ghclient.Issue
 	if textChanged {
@@ -169,8 +171,8 @@ func runEdit(ctx context.Context, env Env, root string, client ghclient.Client, 
 		saved = &iss
 	}
 
-	if pullIn || prioChanged {
-		if err := prioritizeEdit(ctx, env, root, client, slug, current, prio, draft.PriorityID, pullIn, prioChanged); err != nil {
+	if pullIn || prioChanged || iterChanged {
+		if err := prioritizeEdit(ctx, env, root, client, slug, current, prio, draft, pullIn, prioChanged, iterChanged); err != nil {
 			if saved != nil {
 				return saved, fmt.Errorf("saved #%d but %w", current.Number, err)
 			}
@@ -181,8 +183,8 @@ func runEdit(ctx context.Context, env Env, root string, client ghclient.Client, 
 }
 
 // prioritizeEdit puts an issue on the board when it is not there and sets its
-// priority when that changed.
-func prioritizeEdit(ctx context.Context, env Env, root string, client ghclient.Client, slug gitrepo.Slug, issue ghclient.Issue, prio *ghclient.PriorityField, optionID string, pullIn, setIt bool) error {
+// priority and iteration when those changed.
+func prioritizeEdit(ctx context.Context, env Env, root string, client ghclient.Client, slug gitrepo.Slug, issue ghclient.Issue, prio *ghclient.PriorityField, draft ui.Draft, pullIn, setIt, setIter bool) error {
 	field := *prio
 	if pullIn {
 		item, err := client.AddToProject(ctx, prio.ProjectID, issue.NodeID)
@@ -193,13 +195,38 @@ func prioritizeEdit(ctx context.Context, env Env, root string, client ghclient.C
 		record(env, root, slug.String(), "boarded", fmt.Sprintf("#%d %s", issue.Number, issue.Title), issue.URL)
 	}
 	if setIt {
-		if err := client.SetPriority(ctx, field, optionID); err != nil {
+		if err := client.SetPriority(ctx, field, draft.PriorityID); err != nil {
 			return fmt.Errorf("could not set the priority of #%d: %w", issue.Number, err)
 		}
 		record(env, root, slug.String(), "prioritized",
-			fmt.Sprintf("#%d %s", issue.Number, optionName(prio, optionID)), issue.URL)
+			fmt.Sprintf("#%d %s", issue.Number, optionName(prio, draft.PriorityID)), issue.URL)
+	}
+	if setIter {
+		if err := setIteration(ctx, env, root, client, slug, issue, field, draft.IterationID); err != nil {
+			return err
+		}
 	}
 	return nil
+}
+
+// setIteration moves a board item into an iteration and logs it.
+func setIteration(ctx context.Context, env Env, root string, client ghclient.Client, slug gitrepo.Slug, issue ghclient.Issue, board ghclient.PriorityField, iterationID string) error {
+	if err := client.SetIteration(ctx, board.ProjectID, board.ItemID, *board.Iteration, iterationID); err != nil {
+		return fmt.Errorf("could not set the iteration of #%d: %w", issue.Number, err)
+	}
+	record(env, root, slug.String(), "iterated",
+		fmt.Sprintf("#%d %s", issue.Number, iterationTitle(board.Iteration, iterationID)), issue.URL)
+	return nil
+}
+
+// iterationTitle is the title of the iteration with id, for the log.
+func iterationTitle(f *ghclient.IterationField, id string) string {
+	for _, o := range f.Options {
+		if o.ID == id {
+			return o.Title
+		}
+	}
+	return id
 }
 
 // optionName is the name of the option with id, for the log.

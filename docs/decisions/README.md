@@ -15,3 +15,4 @@ so the same ground is not re-covered later.
 - [0009 — `enzo list` colors the issue number by board priority](0009-priority-colors-the-issue-number.md) — revisits 0001
 - [0010 — The issue forms have a priority selector](0010-priority-selector-in-the-editor.md) — builds on 0009
 - [0011 — `enzo setup` pins the board priorities live on](0011-setup-pins-the-priority-board.md) — builds on 0010
+- [0012 — The issue forms have an iteration selector](0012-iteration-selector.md) — builds on 0010, 0011

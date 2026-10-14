@@ -673,3 +673,23 @@ func TestNewUsesPinnedBoard(t *testing.T) {
 		t.Errorf("read board #%d, want 12", h.client.gotProjectNumber)
 	}
 }
+
+func TestNewSetsIterationOnTheBoard(t *testing.T) {
+	h := newHarness(t, defaultRemote)
+	seedConfig(t, h, &config.Config{Token: "t", Project: &config.ProjectRef{Owner: "EfficientComputer", Number: 12}})
+	h.env.Interactive = true
+	board := *testPinned
+	h.client.projectField = &board
+	h.client.iterField = testIters
+	h.drafted = ui.Draft{Title: "a thing", IterationID: "i2"}
+
+	if err := New(context.Background(), h.env, nil); err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if h.client.addCalls != 1 || h.client.setIterCalls != 1 || h.client.setIterOption != "i2" {
+		t.Errorf("adds=%d iterations=%d option=%q", h.client.addCalls, h.client.setIterCalls, h.client.setIterOption)
+	}
+	if h.client.setPrioCalls != 0 {
+		t.Errorf("priority writes = %d, want none", h.client.setPrioCalls)
+	}
+}

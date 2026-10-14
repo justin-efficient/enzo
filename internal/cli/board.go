@@ -42,9 +42,19 @@ func pinnedBoard(ctx context.Context, client ghclient.Client, ref *config.Projec
 // being found, gets a form without it rather than no form.
 func newIssueBoard(ctx context.Context, client ghclient.Client, ref *config.ProjectRef, slug gitrepo.Slug, login string) *ghclient.PriorityField {
 	if f := pinnedBoard(ctx, client, ref); f != nil {
-		return f
+		return withIteration(ctx, client, f)
 	}
 	f, _ := client.BoardPriorityField(ctx, slug, login)
+	return withIteration(ctx, client, f)
+}
+
+// withIteration attaches the board's Iteration field, if it has one. Like
+// priority it is a convenience, so a failure to read it just leaves it out.
+func withIteration(ctx context.Context, client ghclient.Client, f *ghclient.PriorityField) *ghclient.PriorityField {
+	if f == nil {
+		return nil
+	}
+	f.Iteration, _ = client.BoardIterationField(ctx, f.ProjectID, f.ItemID)
 	return f
 }
 
@@ -55,10 +65,10 @@ func newIssueBoard(ctx context.Context, client ghclient.Client, ref *config.Proj
 func issueBoard(ctx context.Context, client ghclient.Client, ref *config.ProjectRef, slug gitrepo.Slug, number int) *ghclient.PriorityField {
 	if pinned := pinnedBoard(ctx, client, ref); pinned != nil {
 		if f, _ := client.IssuePriorityField(ctx, slug, number, pinned.ProjectID); f != nil {
-			return f
+			return withIteration(ctx, client, f)
 		}
-		return pinned
+		return withIteration(ctx, client, pinned)
 	}
 	f, _ := client.IssuePriorityField(ctx, slug, number, "")
-	return f
+	return withIteration(ctx, client, f)
 }

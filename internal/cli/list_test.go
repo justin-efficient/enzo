@@ -1071,6 +1071,61 @@ func TestListEditPriorityFailureAfterTextSaved(t *testing.T) {
 	}
 }
 
+var testIters = &ghclient.IterationField{
+	FieldID: "IF", Current: "i1",
+	Options: []ghclient.IterationOption{{ID: "i1", Title: "Iteration 64"}, {ID: "i2", Title: "Iteration 65"}},
+}
+
+func TestListEditChangesOnlyIteration(t *testing.T) {
+	h := editHarness(t)
+	h.client.iterField = testIters
+	h.edited = ui.Draft{Title: "fix the thing", PriorityID: "o2", IterationID: "i2"}
+
+	if err := List(context.Background(), h.env, nil); err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if h.editedPrio.Iteration != testIters {
+		t.Error("the form should be given the board's iterations")
+	}
+	if h.client.setIterCalls != 1 || h.client.setIterOption != "i2" || h.client.setIterItem != "I" {
+		t.Errorf("SetIteration calls=%d item=%q option=%q", h.client.setIterCalls, h.client.setIterItem, h.client.setIterOption)
+	}
+	if h.client.setPrioCalls != 0 || h.client.updateCalls != 0 {
+		t.Errorf("priority writes=%d text writes=%d, want none", h.client.setPrioCalls, h.client.updateCalls)
+	}
+	if got := h.findLogged(t, "iterated"); !strings.Contains(got.Text, "Iteration 65") {
+		t.Errorf("log text %q", got.Text)
+	}
+}
+
+func TestListEditSameOrNoIterationWritesNothing(t *testing.T) {
+	for name, id := range map[string]string{"same": "i1", "none chosen": ""} {
+		t.Run(name, func(t *testing.T) {
+			h := editHarness(t)
+			h.client.iterField = testIters
+			h.edited = ui.Draft{Title: "fix the thing", PriorityID: "o2", IterationID: id}
+
+			if err := List(context.Background(), h.env, nil); err != nil {
+				t.Fatalf("List: %v", err)
+			}
+			if h.client.setIterCalls != 0 {
+				t.Errorf("SetIteration calls = %d, want 0", h.client.setIterCalls)
+			}
+		})
+	}
+}
+
+func TestListEditIterationFailure(t *testing.T) {
+	h := editHarness(t)
+	h.client.iterField = testIters
+	h.client.setIterErr = errBoom
+	h.edited = ui.Draft{Title: "renamed", PriorityID: "o2", IterationID: "i2"}
+
+	err := List(context.Background(), h.env, nil)
+	requireErrorContains(t, err, "saved #12")
+	requireErrorContains(t, err, "iteration")
+}
+
 var testPinned = &ghclient.PriorityField{
 	ProjectID: "proj-1", FieldID: "F",
 	Options: []ghclient.PriorityOption{{ID: "o0", Name: "P0", Color: "RED"}, {ID: "o2", Name: "P2", Color: "YELLOW"}},

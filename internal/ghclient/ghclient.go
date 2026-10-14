@@ -85,6 +85,12 @@ type Client interface {
 	// SetPriority sets the priority described by f to the option with
 	// optionID.
 	SetPriority(ctx context.Context, f PriorityField, optionID string) error
+	// BoardIterationField reads a board's Iteration field and, when itemID is
+	// not empty, that item's current iteration. It is nil when the board has
+	// no Iteration field.
+	BoardIterationField(ctx context.Context, projectID, itemID string) (*IterationField, error)
+	// SetIteration moves a board item into the iteration with iterationID.
+	SetIteration(ctx context.Context, projectID, itemID string, f IterationField, iterationID string) error
 	// OpenIssues lists every open issue in slug, newest activity first. Pull
 	// requests are excluded. It is what `enzo new sub` offers as parents.
 	OpenIssues(ctx context.Context, slug gitrepo.Slug) ([]Issue, error)

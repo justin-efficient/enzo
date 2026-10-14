@@ -18,6 +18,8 @@ type Draft struct {
 	// PriorityID is the chosen priority option, or empty when the form had no
 	// priority to choose.
 	PriorityID string
+	// IterationID is the chosen iteration, or empty when none was chosen.
+	IterationID string
 }
 
 // Which field has focus.
@@ -25,6 +27,7 @@ const (
 	focusTitle = iota
 	focusBody
 	focusPriority
+	focusIteration
 )
 
 // DraftForm asks for an issue title and body, and when editing an issue that is
@@ -40,12 +43,17 @@ type DraftForm struct {
 	edit *ghclient.Issue
 	// prio, when set, adds a priority selector; choice indexes prio.Options,
 	// or is -1 for none chosen.
-	prio     *ghclient.PriorityField
-	choice   int
-	focus    int
-	draft    Draft
-	canceled bool
-	done     bool
+	prio   *ghclient.PriorityField
+	choice int
+	// iter is prio.Iteration when the board has one; iterChoice indexes its
+	// Options, or is -1 for none. It starts on none: an iteration is a plan,
+	// so there is no sensible default.
+	iter       *ghclient.IterationField
+	iterChoice int
+	focus      int
+	draft      Draft
+	canceled   bool
+	done       bool
 }
 
 var _ tea.Model = DraftForm{}
@@ -88,11 +96,19 @@ func NewEditForm(repo string, issue ghclient.Issue, prio *ghclient.PriorityField
 // form without one. The selector starts on the issue's current priority, or on
 // P2 when it has none.
 func (m DraftForm) WithPriority(prio *ghclient.PriorityField) DraftForm {
-	m.choice = -1
+	m.choice, m.iterChoice = -1, -1
 	if prio == nil {
 		return m
 	}
 	m.prio = prio
+	if it := prio.Iteration; it != nil {
+		m.iter = it
+		for i, o := range it.Options {
+			if o.ID == it.Current {
+				m.iterChoice = i
+			}
+		}
+	}
 	for i, o := range prio.Options {
 		if prio.Current != "" && o.ID == prio.Current {
 			m.choice = i
@@ -115,9 +131,10 @@ const submitKey = "ctrl+s"
 // form was not completed.
 func (m DraftForm) Draft() Draft {
 	return Draft{
-		Title:      strings.TrimSpace(m.draft.Title),
-		Body:       strings.TrimSpace(m.draft.Body),
-		PriorityID: m.draft.PriorityID,
+		Title:       strings.TrimSpace(m.draft.Title),
+		Body:        strings.TrimSpace(m.draft.Body),
+		PriorityID:  m.draft.PriorityID,
+		IterationID: m.draft.IterationID,
 	}
 }
 
@@ -154,7 +171,7 @@ func (m DraftForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch m.focus {
 			case focusTitle:
 				return m.moveFocus(1), nil
-			case focusPriority:
+			case focusPriority, focusIteration:
 				return m, nil
 			}
 
@@ -162,18 +179,24 @@ func (m DraftForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.submit()
 
 		case "left", "h", "up", "k":
-			if m.focus == focusPriority {
+			switch m.focus {
+			case focusPriority:
 				return m.moveChoice(-1), nil
+			case focusIteration:
+				return m.moveIteration(-1), nil
 			}
 
 		case "right", "l", "down", "j":
-			if m.focus == focusPriority {
+			switch m.focus {
+			case focusPriority:
 				return m.moveChoice(1), nil
+			case focusIteration:
+				return m.moveIteration(1), nil
 			}
 		}
 
-		// The selector has no text input to type into.
-		if m.focus == focusPriority {
+		// The selectors have no text input to type into.
+		if m.focus == focusPriority || m.focus == focusIteration {
 			return m, nil
 		}
 	}
@@ -197,6 +220,9 @@ func (m DraftForm) submit() (tea.Model, tea.Cmd) {
 	if m.prio != nil && m.choice >= 0 {
 		m.draft.PriorityID = m.prio.Options[m.choice].ID
 	}
+	if m.iter != nil && m.iterChoice >= 0 {
+		m.draft.IterationID = m.iter.Options[m.iterChoice].ID
+	}
 	m.done = true
 	return m, tea.Quit
 }
@@ -204,29 +230,50 @@ func (m DraftForm) submit() (tea.Model, tea.Cmd) {
 // moveChoice steps the priority selection, wrapping at the ends. From "none"
 // it lands on the first option going right and the last going left.
 func (m DraftForm) moveChoice(d int) DraftForm {
-	n := len(m.prio.Options)
-	switch {
-	case m.choice < 0 && d > 0:
-		m.choice = 0
-	case m.choice < 0:
-		m.choice = n - 1
-	default:
-		m.choice = (m.choice + d + n) % n
-	}
+	m.choice = step(m.choice, d, len(m.prio.Options))
 	return m
 }
 
-// fields is how many fields tab cycles through.
-func (m DraftForm) fields() int {
-	if m.prio != nil {
-		return 3
+// moveIteration steps the iteration selection the same way.
+func (m DraftForm) moveIteration(d int) DraftForm {
+	m.iterChoice = step(m.iterChoice, d, len(m.iter.Options))
+	return m
+}
+
+// step moves a selection d places among n options, wrapping. From -1 ("none")
+// it lands on the first going right and the last going left.
+func step(cur, d, n int) int {
+	switch {
+	case cur < 0 && d > 0:
+		return 0
+	case cur < 0:
+		return n - 1
 	}
-	return 2
+	return (cur + d + n) % n
+}
+
+// order lists the fields tab cycles through.
+func (m DraftForm) order() []int {
+	o := []int{focusTitle, focusBody}
+	if m.prio != nil {
+		o = append(o, focusPriority)
+	}
+	if m.iter != nil {
+		o = append(o, focusIteration)
+	}
+	return o
 }
 
 // moveFocus moves between the fields, wrapping at the ends.
 func (m DraftForm) moveFocus(d int) DraftForm {
-	m.focus = (m.focus + d + m.fields()) % m.fields()
+	o := m.order()
+	at := 0
+	for i, f := range o {
+		if f == m.focus {
+			at = i
+		}
+	}
+	m.focus = o[(at+d+len(o))%len(o)]
 	m.title.Blur()
 	m.body.Blur()
 	switch m.focus {
@@ -267,13 +314,17 @@ func (m DraftForm) View() tea.View {
 		b.WriteString(m.fieldLabel("priority", m.focus == focusPriority) + "\n")
 		b.WriteString(m.priorityRow() + "\n\n")
 	}
+	if m.iter != nil {
+		b.WriteString(m.fieldLabel("iteration", m.focus == focusIteration) + "\n")
+		b.WriteString(m.iterationRow() + "\n\n")
+	}
 
 	verb := "create"
 	if m.edit != nil {
 		verb = "save"
 	}
 	help := "tab switch · " + submitKey + " " + verb + " · esc cancel"
-	if m.focus == focusPriority {
+	if m.focus == focusPriority || m.focus == focusIteration {
 		help = "←/→ change · tab switch · " + submitKey + " " + verb + " · esc cancel"
 	}
 	if strings.TrimSpace(m.title.Value()) == "" {
@@ -303,4 +354,18 @@ func (m DraftForm) priorityRow() string {
 		parts = append(parts, m.styles.Help.Render(" "+o.Name+" "))
 	}
 	return "  " + strings.Join(parts, " ")
+}
+
+// iterationRow shows the chosen iteration with its dates, between arrows that
+// hint at the cycle. There can be many iterations, so unlike priority they are
+// not all drawn.
+func (m DraftForm) iterationRow() string {
+	if m.iterChoice < 0 {
+		return "  " + m.styles.Help.Render("‹ none ›")
+	}
+	o := m.iter.Options[m.iterChoice]
+	span := o.Start.Format("Jan 2") + " – " + o.End().Format("Jan 2")
+	return fmt.Sprintf("  ‹ %s %s ›",
+		m.styles.Selected.Render(o.Title),
+		m.styles.Help.Render(fmt.Sprintf("(%s · %d/%d)", span, m.iterChoice+1, len(m.iter.Options))))
 }

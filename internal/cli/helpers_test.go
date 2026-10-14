@@ -46,6 +46,12 @@ type fakeClient struct {
 	boards           []ghclient.Board
 	boardsErr        error
 
+	// iterField backs BoardIterationField; setIter* record SetIteration.
+	iterField     *ghclient.IterationField
+	setIterCalls  int
+	setIterItem   string
+	setIterOption string
+	setIterErr    error
 	// boardField backs BoardPriorityField; addToProject records AddToProject.
 	boardField    *ghclient.PriorityField
 	boardFieldErr error
@@ -237,6 +243,16 @@ func (f *fakeClient) SetPriority(_ context.Context, field ghclient.PriorityField
 	f.setPrioItem = field.ItemID
 	f.setPrioOption = option
 	return f.setPrioErr
+}
+
+func (f *fakeClient) BoardIterationField(context.Context, string, string) (*ghclient.IterationField, error) {
+	return f.iterField, nil
+}
+
+func (f *fakeClient) SetIteration(_ context.Context, _, item string, _ ghclient.IterationField, option string) error {
+	f.setIterCalls++
+	f.setIterItem, f.setIterOption = item, option
+	return f.setIterErr
 }
 
 func (f *fakeClient) BoardPriorityField(context.Context, gitrepo.Slug, string) (*ghclient.PriorityField, error) {

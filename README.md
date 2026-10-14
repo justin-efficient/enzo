@@ -47,7 +47,7 @@ and `$GITHUB_TOKEN`, in that order, after `.enzo`.
 
 `enzo new` opens an issue in the current repo, assigned to you. With no title
 it shows a form: tab switches between title, body and — when you have issues on
-a project board with a Priority field — a priority selector (default P2), `ctrl+s`
+a project board with a Priority field — a priority selector (default P2) and, if the board has an Iteration field, an iteration selector, `ctrl+s`
 creates, `esc` cancels. A title is required. A chosen priority adds the new issue
 to that board.
 
@@ -95,7 +95,7 @@ composes in pipes and scripts.
 | key | in the picker |
 | --- | --- |
 | ↑ / ↓ | move |
-| enter | edit the highlighted issue's title and body in a form (`ctrl+s` saves, esc backs out; tab reaches a priority selector, default P2, when the issue is on a board), then come back to the list — on the "new issue" row, open the new-issue form |
+| enter | edit the highlighted issue's title and body in a form (`ctrl+s` saves, esc backs out; tab reaches a priority selector, default P2, and an iteration selector when the issue is on a board), then come back to the list — on the "new issue" row, open the new-issue form |
 | `ctrl+o` | show the highlighted issue in your browser, then come back to the list |
 | `ctrl+n` | open a sub-issue of the highlighted issue — a top-level issue on the "new issue" row |
 | esc | quit |
