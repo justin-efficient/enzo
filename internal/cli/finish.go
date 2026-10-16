@@ -88,7 +88,7 @@ func Finish(ctx context.Context, env Env, args []string) error {
 		return err
 	}
 
-	checked, remaining := assess(ready)
+	checked, remaining, softFail := assess(ready)
 	blockers = append(blockers, remaining...)
 	width := rows(env.Stdout, append(rr, checked...)...)
 
@@ -96,6 +96,17 @@ func Finish(ctx context.Context, env Env, args []string) error {
 		// Everything was reported before refusing, so one run names every
 		// reason rather than one reason at a time.
 		return fmt.Errorf("not merged: %s", strings.Join(blockers, "; "))
+	}
+
+	// GitHub says the merge is allowed, but a check that is not required failed.
+	// That is the user's call, so ask rather than refuse.
+	if softFail {
+		fmt.Fprintf(env.Stdout, "\na non-required check failed, but GitHub allows the merge. merge anyway? [y/N] ")
+		line, err := readLine(env)
+		if answer := strings.ToLower(strings.TrimSpace(line)); err != nil || (answer != "y" && answer != "yes") {
+			fmt.Fprintln(env.Stdout, "not merged")
+			return nil
+		}
 	}
 
 	if err := client.MergePullRequest(ctx, slug, pr.Number); err != nil {
@@ -129,7 +140,15 @@ func describeDirty(paths []string) string {
 // assess turns a Readiness into the rows to print and the reasons not to
 // merge. Every check reports, whether or not it passed, so the output is the
 // same shape either way and a run that refuses says why on every count.
-func assess(r ghclient.Readiness) (checked []row, blockers []string) {
+//
+// softFail is set when checks failed but GitHub still calls the pull request
+// mergeable (UNSTABLE): none of the failures are required, so it is a warning
+// to confirm rather than a blocker.
+func assess(r ghclient.Readiness) (checked []row, blockers []string, softFail bool) {
+	// Whether GitHub itself would allow the merge. Failures it does not hold
+	// the merge for show as warnings rather than crosses.
+	githubAllows := r.Mergeable == "MERGEABLE" && r.MergeState != "BLOCKED" && r.MergeState != "BEHIND"
+
 	// 3. Is review satisfied? An empty decision means the repository asks for
 	// none, which is not the same as having been approved.
 	switch r.ReviewDecision {
@@ -148,14 +167,24 @@ func assess(r ghclient.Readiness) (checked []row, blockers []string) {
 	// 4. The pull request's own checks. Still running counts against it: the
 	// merge cannot go ahead on a check that has not answered yet.
 	passing := r.Checks == "" || r.Checks == "SUCCESS"
-	checked = append(checked, row{mark(passing), "checks", describeChecks(r)})
+	checkMark := markPass
+	if !passing {
+		checkMark = markFail
+	}
 	switch r.Checks {
 	case "", "SUCCESS":
 	case "PENDING", "EXPECTED":
 		blockers = append(blockers, "checks are still running")
 	default:
-		blockers = append(blockers, "checks failed")
+		if r.Checks == "FAILURE" && r.Mergeable == "MERGEABLE" && r.MergeState == "UNSTABLE" {
+			softFail = true
+			checkMark = markWarn // GitHub does not hold the merge for it
+		} else {
+			blockers = append(blockers, "checks failed")
+		}
 	}
+
+	checked = append(checked, row{checkMark, "checks", describeChecks(r)})
 
 	// 5. The base branch's own build, which is not a blocker: a broken main is
 	// a reason to know, not a reason your work cannot land on it.
@@ -167,7 +196,14 @@ func assess(r ghclient.Readiness) (checked []row, blockers []string) {
 	// this row adds nothing to blockers. A base still building is not red.
 	baseRed := base != "" && r.BaseChecks != "" && r.BaseChecks != "SUCCESS" &&
 		r.BaseChecks != "PENDING" && r.BaseChecks != "EXPECTED"
-	checked = append(checked, row{mark(!baseRed), base, describeBase(r)})
+	baseMark := markPass
+	if baseRed {
+		baseMark = markFail
+		if githubAllows {
+			baseMark = markWarn
+		}
+	}
+	checked = append(checked, row{baseMark, base, describeBase(r)})
 
 	// 6. Can it merge at all? Last, because it is GitHub's verdict on
 	// everything above: the rows before it are the reasons, this is the
@@ -195,7 +231,7 @@ func assess(r ghclient.Readiness) (checked []row, blockers []string) {
 		blockers = append(blockers, "GitHub has not finished working out whether it merges; try again shortly")
 	}
 
-	return checked, blockers
+	return checked, blockers, softFail
 }
 
 func describeMergeState(state string) string {
@@ -226,9 +262,9 @@ func describeChecks(r ghclient.Readiness) string {
 	case r.Checks == "":
 		return "none on this commit"
 	case len(r.Failed) > 0:
-		return "failed: " + strings.Join(r.Failed, ", ")
+		return checkList("failed: ", r.Failed)
 	case len(r.Pending) > 0:
-		return "still running: " + strings.Join(r.Pending, ", ")
+		return checkList("still running: ", r.Pending)
 	case r.Checks == "SUCCESS":
 		return "all passed"
 	}
@@ -240,6 +276,10 @@ func describeBase(r ghclient.Readiness) string {
 	if r.BaseHead != "" {
 		at = " at " + r.BaseHead
 	}
+	// Name the failed stages: "failure at x" leaves you to go and look.
+	if len(r.BaseFailed) > 0 {
+		return checkList("failed: ", r.BaseFailed)
+	}
 	switch r.BaseChecks {
 	case "":
 		return "no build" + at
@@ -249,4 +289,22 @@ func describeBase(r ghclient.Readiness) string {
 		return "building" + at
 	}
 	return strings.ToLower(r.BaseChecks) + at
+}
+
+// checkList names checks after a lead-in, each with the URL of its run on a
+// line of its own under the noun column. The URL is printed whole so any
+// terminal can open it.
+func checkList(lead string, cc []ghclient.Check) string {
+	var lines []string
+	for i, c := range cc {
+		if i == 0 {
+			lines = append(lines, lead+c.Name)
+		} else {
+			lines = append(lines, strings.Repeat(" ", len(lead))+c.Name)
+		}
+		if c.URL != "" {
+			lines = append(lines, c.URL)
+		}
+	}
+	return strings.Join(lines, "\n")
 }

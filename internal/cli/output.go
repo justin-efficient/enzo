@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"io"
+	"strings"
 )
 
 // Emoji open a command's report. One per command, so what enzo just did is
@@ -29,6 +30,7 @@ const (
 const (
 	markPass = "✅"
 	markFail = "❌"
+	markWarn = "⚠️ " // renders one column wide in most terminals; the space makes it two
 	markNone = "  "
 )
 
@@ -99,7 +101,18 @@ func printMarkedRow(w io.Writer, m string, width int, verb, noun string) {
 	if m != "" {
 		prefix += m + " "
 	}
-	fmt.Fprintf(w, "%s%-*s %s\n", prefix, width+1, verb+":", noun)
+	// A noun may run to several lines; the rest sit under the first, in the
+	// noun column.
+	lines := strings.Split(noun, "\n")
+	fmt.Fprintf(w, "%s%-*s %s\n", prefix, width+1, verb+":", lines[0])
+	cols := len(indent) + width + 2
+	if m != "" {
+		cols += 3 // an emoji is two columns wide, plus its space
+	}
+	pad := strings.Repeat(" ", cols)
+	for _, l := range lines[1:] {
+		fmt.Fprintf(w, "%s%s\n", pad, l)
+	}
 }
 
 // abortWidth is the widest verb `enzo abort` reports with, so its rows line up

@@ -194,6 +194,9 @@ $ enzo finish
    ✅ merged:    PR #77 into main
 ```
 
+A failing `checks` or `main` row names each failed stage, with the URL of its
+run on the line beneath.
+
 Each row opens with ✅ when that check is satisfied and ❌ when it is not. The
 six rows are the six things it checks, in order. A run that refuses prints the
 same six and then says why, so one run names everything that is wrong rather
@@ -222,7 +225,10 @@ the rows before it are the reasons, and it is the answer.
 A ❌ on `main` is the one cross that does not stop the merge: the base branch
 is **reported, not enforced**. A red `main` is worth seeing before you add to
 it, but it is not yours to fix and the merge still goes ahead. A base that is
-still building is not red. Everything else that fails does stop the merge.
+still building is not red. Everything else that fails does stop the merge,
+with one exception: when checks fail but GitHub still calls the pull request
+mergeable (`UNSTABLE` — the failing checks are not required), the failure is
+reported and `enzo finish` asks `merge anyway? [y/N]` instead of refusing.
 
 **enzo requests no reviewers of its own.** It reports whoever GitHub asked when
 the pull request left draft, and waits.

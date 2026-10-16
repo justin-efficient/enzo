@@ -35,8 +35,8 @@ type Readiness struct {
 	Checks string
 	// Failed and Pending name the checks in those states, for a report that
 	// says which one rather than only that one of them did.
-	Failed  []string
-	Pending []string
+	Failed  []Check
+	Pending []Check
 
 	// BaseBranch is the branch the pull request merges into, and BaseChecks
 	// the rollup over its head commit — the "has main been built, and did it
@@ -44,6 +44,52 @@ type Readiness struct {
 	BaseBranch string
 	BaseHead   string
 	BaseChecks string
+	// BaseFailed names the base build's failed checks, like Failed.
+	BaseFailed []Check
+}
+
+// Check is one check on a commit and the page that shows its run.
+type Check struct {
+	Name string
+	// URL is empty when GitHub gave no link for it.
+	URL string
+}
+
+// contextNode is a check as GraphQL returns it: a CheckRun, or a legacy
+// StatusContext.
+type contextNode struct {
+	Type       string `json:"__typename"`
+	Name       string `json:"name"`
+	Conclusion string `json:"conclusion"`
+	Status     string `json:"status"`
+	DetailsURL string `json:"detailsUrl"`
+	Context    string `json:"context"`
+	State      string `json:"state"`
+	TargetURL  string `json:"targetUrl"`
+}
+
+// sortChecks splits a commit's checks into those that failed and those still
+// running; passing, neutral and skipped ones are dropped.
+func sortChecks(nodes []contextNode) (failed, pending []Check) {
+	for _, c := range nodes {
+		// A CheckRun carries a conclusion once it finishes and a status until
+		// then; a StatusContext has only a state.
+		name, outcome, url := c.Name, c.Conclusion, c.DetailsURL
+		if name == "" {
+			name, outcome, url = c.Context, c.State, c.TargetURL
+		}
+		if outcome == "" {
+			outcome = c.Status
+		}
+		switch outcome {
+		case "SUCCESS", "NEUTRAL", "SKIPPED":
+		case "QUEUED", "IN_PROGRESS", "PENDING", "WAITING", "EXPECTED", "REQUESTED":
+			pending = append(pending, Check{name, url})
+		default:
+			failed = append(failed, Check{name, url})
+		}
+	}
+	return failed, pending
 }
 
 // readinessQuery asks for all five of `enzo finish`'s questions at once. They
@@ -66,14 +112,21 @@ query($owner:String!, $name:String!, $number:Int!) {
         state
         contexts(first:50) { nodes {
           __typename
-          ... on CheckRun { name conclusion status }
-          ... on StatusContext { context state }
+          ... on CheckRun { name conclusion status detailsUrl }
+          ... on StatusContext { context state targetUrl }
         } }
       } } } }
     }
     defaultBranchRef {
       name
-      target { ... on Commit { oid statusCheckRollup { state } } }
+      target { ... on Commit { oid statusCheckRollup {
+        state
+        contexts(first:50) { nodes {
+          __typename
+          ... on CheckRun { name conclusion status detailsUrl }
+          ... on StatusContext { context state targetUrl }
+        } }
+      } } }
     }
   }
 }`
@@ -100,14 +153,7 @@ func (a *API) Readiness(ctx context.Context, slug gitrepo.Slug, number int) (Rea
 							StatusCheckRollup *struct {
 								State    string `json:"state"`
 								Contexts struct {
-									Nodes []struct {
-										Type       string `json:"__typename"`
-										Name       string `json:"name"`
-										Conclusion string `json:"conclusion"`
-										Status     string `json:"status"`
-										Context    string `json:"context"`
-										State      string `json:"state"`
-									} `json:"nodes"`
+									Nodes []contextNode `json:"nodes"`
 								} `json:"contexts"`
 							} `json:"statusCheckRollup"`
 						} `json:"commit"`
@@ -119,7 +165,10 @@ func (a *API) Readiness(ctx context.Context, slug gitrepo.Slug, number int) (Rea
 				Target struct {
 					Oid               string `json:"oid"`
 					StatusCheckRollup *struct {
-						State string `json:"state"`
+						State    string `json:"state"`
+						Contexts struct {
+							Nodes []contextNode `json:"nodes"`
+						} `json:"contexts"`
 					} `json:"statusCheckRollup"`
 				} `json:"target"`
 			} `json:"defaultBranchRef"`
@@ -148,24 +197,7 @@ func (a *API) Readiness(ctx context.Context, slug gitrepo.Slug, number int) (Rea
 	if len(pr.Commits.Nodes) > 0 {
 		if rollup := pr.Commits.Nodes[0].Commit.StatusCheckRollup; rollup != nil {
 			r.Checks = rollup.State
-			for _, c := range rollup.Contexts.Nodes {
-				// A CheckRun carries a conclusion once it finishes and a
-				// status until then; a StatusContext has only a state.
-				name, outcome := c.Name, c.Conclusion
-				if name == "" {
-					name, outcome = c.Context, c.State
-				}
-				if outcome == "" {
-					outcome = c.Status
-				}
-				switch outcome {
-				case "SUCCESS", "NEUTRAL", "SKIPPED":
-				case "QUEUED", "IN_PROGRESS", "PENDING", "WAITING", "EXPECTED", "REQUESTED":
-					r.Pending = append(r.Pending, name)
-				default:
-					r.Failed = append(r.Failed, name)
-				}
-			}
+			r.Failed, r.Pending = sortChecks(rollup.Contexts.Nodes)
 		}
 	}
 
@@ -176,6 +208,7 @@ func (a *API) Readiness(ctx context.Context, slug gitrepo.Slug, number int) (Rea
 	}
 	if rollup := base.Target.StatusCheckRollup; rollup != nil {
 		r.BaseChecks = rollup.State
+		r.BaseFailed, _ = sortChecks(rollup.Contexts.Nodes)
 	}
 	return r, nil
 }
@@ -210,11 +243,16 @@ mutation($id:ID!) {
 	return nil
 }
 
-// MergePullRequest merges a pull request. The commit message is left to
-// GitHub, which composes it from the title and the repository's settings.
+// MergePullRequest merges a pull request with a method the repository allows.
+// The commit message is left to GitHub, which composes it from the title and
+// the repository's settings.
 func (a *API) MergePullRequest(ctx context.Context, slug gitrepo.Slug, number int) error {
+	repo, _, err := a.gh.Repositories.Get(ctx, slug.Owner, slug.Name)
+	if err != nil {
+		return wrap(err, fmt.Sprintf("could not read the merge settings of %s", slug))
+	}
 	res, _, err := a.gh.PullRequests.Merge(ctx, slug.Owner, slug.Name, number, "",
-		&github.PullRequestOptions{})
+		&github.PullRequestOptions{MergeMethod: mergeMethod(repo)})
 	if err != nil {
 		return wrap(err, fmt.Sprintf("could not merge %s#%d", slug, number))
 	}
@@ -222,4 +260,18 @@ func (a *API) MergePullRequest(ctx context.Context, slug gitrepo.Slug, number in
 		return fmt.Errorf("GitHub refused to merge %s#%d: %s", slug, number, res.GetMessage())
 	}
 	return nil
+}
+
+// mergeMethod picks how to merge: a merge commit when allowed, as before,
+// otherwise squash, otherwise rebase. Repositories can turn each off.
+func mergeMethod(r *github.Repository) string {
+	switch {
+	case r.GetAllowMergeCommit():
+		return "merge"
+	case r.GetAllowSquashMerge():
+		return "squash"
+	case r.GetAllowRebaseMerge():
+		return "rebase"
+	}
+	return "merge"
 }

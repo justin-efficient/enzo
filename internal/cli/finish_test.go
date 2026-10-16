@@ -124,7 +124,7 @@ func TestFinishNamesEveryBlockerAtOnce(t *testing.T) {
 	h := finishReady(t)
 	dirtyTracked(t, h, "tracked.txt")
 	h.client.readiness.Checks = "FAILURE"
-	h.client.readiness.Failed = []string{"dist"}
+	h.client.readiness.Failed = []ghclient.Check{{Name: "dist"}}
 
 	err := Finish(context.Background(), h.env, nil)
 	for _, want := range []string{"1 file uncommitted", "checks failed"} {
@@ -233,12 +233,12 @@ func TestFinishRefusesAndSaysWhy(t *testing.T) {
 
 		{"checks failed", func(r *ghclient.Readiness) {
 			r.Checks = "FAILURE"
-			r.Failed = []string{"test"}
+			r.Failed = []ghclient.Check{{Name: "test"}}
 		}, "checks:    failed: test", "checks failed"},
 
 		{"checks still running", func(r *ghclient.Readiness) {
 			r.Checks = "PENDING"
-			r.Pending = []string{"dist"}
+			r.Pending = []ghclient.Check{{Name: "dist"}}
 		}, "checks:    still running: dist", "still running"},
 
 		{"branch behind", func(r *ghclient.Readiness) {
@@ -289,7 +289,7 @@ func TestFinishMergesOntoABrokenBase(t *testing.T) {
 	}
 	// The cross says main is red. It does not say your work is stuck: the
 	// merge went through on the line above.
-	if !strings.Contains(h.out(), markFail+" main:      failure at 0d752a6") {
+	if !strings.Contains(h.out(), markWarn+" main:      failure at 0d752a6") {
 		t.Errorf("output should cross the base build:\n%s", h.out())
 	}
 	if !strings.Contains(h.out(), markPass+" merged:    PR #77 into main") {
@@ -367,5 +367,53 @@ func TestFinishWithoutAPullRequest(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "enzo start 12") {
 		t.Errorf("error = %q, want it to point at `enzo start 12`", err)
+	}
+}
+
+// A failing check that is not required leaves the pull request UNSTABLE, which
+// GitHub still lets merge. Enzo reports the failure and asks.
+func TestFinishAsksWhenOnlyNonRequiredChecksFail(t *testing.T) {
+	for _, tt := range []struct {
+		answer string
+		merges int
+	}{{"y", 1}, {"n", 0}, {"", 0}} {
+		h := finishReady(t)
+		h.client.readiness.Checks = "FAILURE"
+		h.client.readiness.Failed = []ghclient.Check{{Name: "bench"}}
+		h.client.readiness.MergeState = "UNSTABLE"
+		h.confirm(tt.answer)
+
+		if err := Finish(context.Background(), h.env, nil); err != nil {
+			t.Fatalf("answer %q: Finish: %v", tt.answer, err)
+		}
+		if h.client.mergeCalls != tt.merges {
+			t.Errorf("answer %q: merged %d times, want %d", tt.answer, h.client.mergeCalls, tt.merges)
+		}
+		if !strings.Contains(h.out(), "checks:    failed: bench") {
+			t.Errorf("the failure should still be reported:\n%s", h.out())
+		}
+	}
+}
+
+// Failed stages are named on the checks and main rows, each with its run's URL.
+func TestFinishNamesFailedStagesWithLinks(t *testing.T) {
+	h := finishReady(t)
+	h.client.readiness.BaseChecks = "FAILURE"
+	h.client.readiness.BaseFailed = []ghclient.Check{{Name: "E2 / bench", URL: "https://ci/1"}}
+	h.client.readiness.Checks = "FAILURE"
+	h.client.readiness.MergeState = "UNSTABLE"
+	h.client.readiness.Failed = []ghclient.Check{{Name: "E2 / bench", URL: "https://ci/2"}}
+	h.confirm("n")
+
+	if err := Finish(context.Background(), h.env, nil); err != nil {
+		t.Fatalf("Finish: %v", err)
+	}
+	for _, want := range []string{
+		markWarn + " checks:    failed: E2 / bench\n" + strings.Repeat(" ", 3+3+len("mergeable:")+1) + "https://ci/2",
+		markWarn + " main:      failed: E2 / bench\n" + strings.Repeat(" ", 3+3+len("mergeable:")+1) + "https://ci/1",
+	} {
+		if !strings.Contains(h.out(), want) {
+			t.Errorf("output is missing %q:\n%s", want, h.out())
+		}
 	}
 }

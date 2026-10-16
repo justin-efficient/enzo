@@ -113,7 +113,7 @@ func TestReadiness(t *testing.T) {
 							"state": "FAILURE",
 							"contexts": map[string]any{"nodes": []map[string]any{
 								{"name": "test", "conclusion": "SUCCESS"},
-								{"name": "dist", "conclusion": "FAILURE"},
+								{"name": "dist", "conclusion": "FAILURE", "detailsUrl": "https://ci/dist"},
 								{"name": "slow", "conclusion": "", "status": "IN_PROGRESS"},
 								{"context": "legacy/ci", "state": "SUCCESS"},
 							}},
@@ -124,8 +124,12 @@ func TestReadiness(t *testing.T) {
 				"defaultBranchRef": map[string]any{
 					"name": "main",
 					"target": map[string]any{
-						"oid":               "0d752a65ca05e566a28b3bf2ad624d1d4fc495cc",
-						"statusCheckRollup": map[string]any{"state": "SUCCESS"},
+						"oid": "0d752a65ca05e566a28b3bf2ad624d1d4fc495cc",
+						"statusCheckRollup": map[string]any{"state": "FAILURE",
+							"contexts": map[string]any{"nodes": []map[string]any{
+								{"name": "E2 / bench", "conclusion": "FAILURE", "detailsUrl": "https://ci/bench"},
+								{"name": "build", "conclusion": "SUCCESS"},
+							}}},
 					},
 				},
 			},
@@ -135,6 +139,9 @@ func TestReadiness(t *testing.T) {
 	got, err := api.Readiness(context.Background(), testSlug, 77)
 	if err != nil {
 		t.Fatalf("Readiness: %v", err)
+	}
+	if len(got.BaseFailed) != 1 || got.BaseFailed[0] != (Check{"E2 / bench", "https://ci/bench"}) {
+		t.Errorf("BaseFailed = %v, want the failed stage with its link", got.BaseFailed)
 	}
 	if calls != 1 {
 		t.Errorf("made %d requests, want 1 — the five questions are one decision", calls)
@@ -149,13 +156,13 @@ func TestReadiness(t *testing.T) {
 	if strings.Join(got.Reviewers, ",") != "someone,a-team" {
 		t.Errorf("reviewers = %v, want both the user and the team", got.Reviewers)
 	}
-	if strings.Join(got.Failed, ",") != "dist" {
+	if len(got.Failed) != 1 || got.Failed[0] != (Check{"dist", "https://ci/dist"}) {
 		t.Errorf("failed = %v, want dist", got.Failed)
 	}
-	if strings.Join(got.Pending, ",") != "slow" {
+	if len(got.Pending) != 1 || got.Pending[0].Name != "slow" {
 		t.Errorf("pending = %v, want the one that has not concluded", got.Pending)
 	}
-	if got.BaseBranch != "main" || got.BaseChecks != "SUCCESS" {
+	if got.BaseBranch != "main" || got.BaseChecks != "FAILURE" {
 		t.Errorf("base = %q/%q", got.BaseBranch, got.BaseChecks)
 	}
 	// Abbreviated, because the full forty characters say nothing more.
