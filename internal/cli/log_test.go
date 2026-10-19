@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/justin-efficient/enzo/internal/config"
+	"github.com/justin-efficient/enzo/internal/ui"
 )
 
 // A log that cannot be written must warn, not fail the issue that was created.
@@ -129,5 +130,24 @@ func TestLogSilentWhenCanceled(t *testing.T) {
 	}
 	if len(h.logged) != 0 {
 		t.Errorf("canceling should log nothing, got %v", h.logged)
+	}
+}
+
+// The pause after saving is narrated in the log, in order, before the creation.
+func TestLogNarratesPauses(t *testing.T) {
+	h := newReady(t)
+	h.env.Interactive = true
+	h.env.Busy = func(message string, work func() error) error { return work() }
+	h.drafted = ui.Draft{Title: "narrated"}
+
+	if err := New(context.Background(), h.env, nil); err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	var msgs []string
+	for _, e := range h.progress {
+		msgs = append(msgs, e.Text)
+	}
+	if got := strings.Join(msgs, "|"); !strings.Contains(got, "creating the issue on GitHub") {
+		t.Errorf("progress = %q, want it to include the creation", got)
 	}
 }

@@ -45,7 +45,12 @@ func List(ctx context.Context, env Env, args []string) error {
 	// runs in a loop, re-reading the issues each time round. enzo keeps no
 	// issue state of its own: the list is always what GitHub reports.
 	for {
-		issues, err := assignedWithPriority(ctx, client, slug, login)
+		var issues []ghclient.Issue
+		err := busy(env, root, slug.String(), "loading your issues from GitHub", func() error {
+			var err error
+			issues, err = assignedWithPriority(ctx, client, slug, login)
+			return err
+		})
 		if err != nil {
 			return err
 		}
@@ -66,7 +71,7 @@ func List(ctx context.Context, env Env, args []string) error {
 				return err
 			}
 			// Created or backed out, either way show the list again.
-			if err := awaitListed(ctx, env, client, slug, login, created); err != nil {
+			if err := awaitListed(ctx, env, root, client, slug, login, created); err != nil {
 				return err
 			}
 
@@ -80,7 +85,7 @@ func List(ctx context.Context, env Env, args []string) error {
 			if err != nil && !errors.Is(err, ErrCanceled) {
 				return err
 			}
-			if err := awaitListed(ctx, env, client, slug, login, created); err != nil {
+			if err := awaitListed(ctx, env, root, client, slug, login, created); err != nil {
 				return err
 			}
 
@@ -96,7 +101,7 @@ func List(ctx context.Context, env Env, args []string) error {
 			if err != nil && !errors.Is(err, ErrCanceled) {
 				return err
 			}
-			if err := awaitEdited(ctx, env, client, slug, login, edited); err != nil {
+			if err := awaitEdited(ctx, env, root, client, slug, login, edited); err != nil {
 				return err
 			}
 
@@ -137,11 +142,20 @@ func assignedWithPriority(ctx context.Context, client ghclient.Client, slug gitr
 // It returns the issue as saved when its text changed, and nil when only the
 // priority did, or nothing.
 func runEdit(ctx context.Context, env Env, root string, client ghclient.Client, slug gitrepo.Slug, listed ghclient.Issue) (*ghclient.Issue, error) {
-	current, err := client.Issue(ctx, slug, listed.Number)
+	var current ghclient.Issue
+	var prio *ghclient.PriorityField
+	err := busy(env, root, slug.String(), fmt.Sprintf("loading #%d from GitHub", listed.Number), func() error {
+		var err error
+		current, err = client.Issue(ctx, slug, listed.Number)
+		if err != nil {
+			return err
+		}
+		prio = issueBoard(ctx, client, boardRef(env, root), slug, current.Number)
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	prio := issueBoard(ctx, client, boardRef(env, root), slug, current.Number)
 
 	draft, err := env.AskEdit(slug.String(), current, prio)
 	if err != nil {
@@ -161,23 +175,30 @@ func runEdit(ctx context.Context, env Env, root string, client ghclient.Client, 
 		draft.IterationID != "" && draft.IterationID != prio.Iteration.Current
 
 	var saved *ghclient.Issue
-	if textChanged {
-		iss, err := client.UpdateIssue(ctx, slug, current.Number, ghclient.IssueEdit{Title: title, Body: body})
-		if err != nil {
-			return nil, err
-		}
-		record(env, root, slug.String(), "edited",
-			fmt.Sprintf("#%d %s", iss.Number, iss.Title), iss.URL)
-		saved = &iss
-	}
-
-	if pullIn || prioChanged || iterChanged {
-		if err := prioritizeEdit(ctx, env, root, client, slug, current, prio, draft, pullIn, prioChanged, iterChanged); err != nil {
-			if saved != nil {
-				return saved, fmt.Errorf("saved #%d but %w", current.Number, err)
+	err = busy(env, root, slug.String(), fmt.Sprintf("saving #%d to GitHub", current.Number), func() error {
+		if textChanged {
+			iss, err := client.UpdateIssue(ctx, slug, current.Number, ghclient.IssueEdit{Title: title, Body: body})
+			if err != nil {
+				return err
 			}
-			return nil, err
+			record(env, root, slug.String(), "edited",
+				fmt.Sprintf("#%d %s", iss.Number, iss.Title), iss.URL)
+			saved = &iss
 		}
+
+		if pullIn || prioChanged || iterChanged {
+			if err := prioritizeEdit(ctx, env, root, client, slug, current, prio, draft, pullIn, prioChanged, iterChanged); err != nil {
+				if saved != nil {
+					return fmt.Errorf("saved #%d but %w", current.Number, err)
+				}
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		// A text save that landed is still reported, so the list waits on it.
+		return saved, err
 	}
 	return saved, nil
 }
@@ -248,13 +269,15 @@ func normalizeBody(s string) string {
 // awaitEdited blocks until GitHub's issue listing shows the saved title and
 // body, so the list does not come back with the old text. edited is nil when
 // nothing was saved.
-func awaitEdited(ctx context.Context, env Env, client ghclient.Client, slug gitrepo.Slug, login string, edited *ghclient.Issue) error {
+func awaitEdited(ctx context.Context, env Env, root string, client ghclient.Client, slug gitrepo.Slug, login string, edited *ghclient.Issue) error {
 	if edited == nil || env.Await == nil {
 		return nil
 	}
 
 	want := *edited
-	return env.Await(fmt.Sprintf("waiting for GitHub to list the edit to #%d", want.Number), func() (bool, error) {
+	message := fmt.Sprintf("waiting for GitHub to list the edit to #%d", want.Number)
+	record(env, root, slug.String(), "working", message, "")
+	return env.Await(message, func() (bool, error) {
 		issues, err := client.AssignedIssues(ctx, slug, login)
 		if err != nil {
 			return false, err
@@ -288,13 +311,15 @@ func openIssue(env Env, iss ghclient.Issue) {
 //
 // created is nil when nothing was made, in which case there is nothing to wait
 // for.
-func awaitListed(ctx context.Context, env Env, client ghclient.Client, slug gitrepo.Slug, login string, created *ghclient.Issue) error {
+func awaitListed(ctx context.Context, env Env, root string, client ghclient.Client, slug gitrepo.Slug, login string, created *ghclient.Issue) error {
 	if created == nil || env.Await == nil {
 		return nil
 	}
 
 	want := *created
-	return env.Await(fmt.Sprintf("waiting for GitHub to list #%d", want.Number), func() (bool, error) {
+	message := fmt.Sprintf("waiting for GitHub to list #%d", want.Number)
+	record(env, root, slug.String(), "working", message, "")
+	return env.Await(message, func() (bool, error) {
 		issues, err := client.AssignedIssues(ctx, slug, login)
 		if err != nil {
 			return false, err

@@ -107,7 +107,7 @@ func runNew(ctx context.Context, env Env, root string, client ghclient.Client, l
 		return nil, err
 	}
 
-	draft, prio, err := draftFor(ctx, env, client, boardRef(env, root), slug, login, parent, req.title, req.body)
+	draft, prio, err := draftFor(ctx, env, root, client, boardRef(env, root), slug, login, parent, req.title, req.body)
 	if err != nil {
 		return nil, err
 	}
@@ -115,34 +115,42 @@ func runNew(ctx context.Context, env Env, root string, client ghclient.Client, l
 		return nil, ErrCanceled
 	}
 
-	issue, err := client.CreateIssue(ctx, slug, ghclient.NewIssue{
-		Title:    draft.Title,
-		Body:     signedBody(draft.Body),
-		Assignee: login,
+	var issue ghclient.Issue
+	err = busy(env, root, slug.String(), "creating the issue on GitHub", func() error {
+		var err error
+		issue, err = client.CreateIssue(ctx, slug, ghclient.NewIssue{
+			Title:    draft.Title,
+			Body:     signedBody(draft.Body),
+			Assignee: login,
+		})
+		if err != nil {
+			return err
+		}
+		record(env, root, slug.String(), "created",
+			fmt.Sprintf("#%d %s", issue.Number, issue.Title), issue.URL)
+
+		if parent != nil {
+			if err := client.LinkSubIssue(ctx, slug, parent.Number, issue.ID); err != nil {
+				// The issue exists; say so rather than implying nothing happened.
+				return fmt.Errorf("created #%d but could not link it under #%d: %w", issue.Number, parent.Number, err)
+			}
+			record(env, root, slug.String(), "linked",
+				fmt.Sprintf("#%d under #%d", issue.Number, parent.Number), issue.URL)
+
+			// The creation response predates the link, so fill the parent in here;
+			// otherwise the issue would render unnested until the next fetch.
+			issue.ParentRepo, issue.ParentNumber = slug.String(), parent.Number
+		}
+
+		if prio != nil && (draft.PriorityID != "" || draft.IterationID != "") {
+			if err := prioritizeNew(ctx, env, root, client, slug, prio, draft, issue); err != nil {
+				return fmt.Errorf("created #%d but could not set its board fields: %w", issue.Number, err)
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, err
-	}
-	record(env, root, slug.String(), "created",
-		fmt.Sprintf("#%d %s", issue.Number, issue.Title), issue.URL)
-
-	if parent != nil {
-		if err := client.LinkSubIssue(ctx, slug, parent.Number, issue.ID); err != nil {
-			// The issue exists; say so rather than implying nothing happened.
-			return nil, fmt.Errorf("created #%d but could not link it under #%d: %w", issue.Number, parent.Number, err)
-		}
-		record(env, root, slug.String(), "linked",
-			fmt.Sprintf("#%d under #%d", issue.Number, parent.Number), issue.URL)
-
-		// The creation response predates the link, so fill the parent in here;
-		// otherwise the issue would render unnested until the next fetch.
-		issue.ParentRepo, issue.ParentNumber = slug.String(), parent.Number
-	}
-
-	if prio != nil && (draft.PriorityID != "" || draft.IterationID != "") {
-		if err := prioritizeNew(ctx, env, root, client, slug, prio, draft, issue); err != nil {
-			return nil, fmt.Errorf("created #%d but could not set its board fields: %w", issue.Number, err)
-		}
 	}
 
 	return &issue, nil
@@ -288,7 +296,7 @@ func resolveParent(ctx context.Context, env Env, client ghclient.Client, slug gi
 // draftFor takes the title and body from flags, or asks for them. When it
 // asks, the form offers a priority selector if a board to put it on can be
 // found, and that field is returned so the caller can act on the choice.
-func draftFor(ctx context.Context, env Env, client ghclient.Client, ref *config.ProjectRef, slug gitrepo.Slug, login string, parent *ghclient.Issue, title, body string) (ui.Draft, *ghclient.PriorityField, error) {
+func draftFor(ctx context.Context, env Env, root string, client ghclient.Client, ref *config.ProjectRef, slug gitrepo.Slug, login string, parent *ghclient.Issue, title, body string) (ui.Draft, *ghclient.PriorityField, error) {
 	if strings.TrimSpace(title) != "" {
 		return ui.Draft{Title: strings.TrimSpace(title), Body: strings.TrimSpace(body)}, nil, nil
 	}
@@ -297,7 +305,13 @@ func draftFor(ctx context.Context, env Env, client ghclient.Client, ref *config.
 	}
 	// The selector is a convenience: a token that cannot read boards, or no
 	// board to be found, gets a form without it.
-	prio := newIssueBoard(ctx, client, ref, slug, login)
+	var prio *ghclient.PriorityField
+	if err := busy(env, root, slug.String(), "loading the board from GitHub", func() error {
+		prio = newIssueBoard(ctx, client, ref, slug, login)
+		return nil
+	}); err != nil {
+		return ui.Draft{}, nil, err
+	}
 
 	draft, err := env.AskDraft(slug.String(), parent, prio)
 	if err != nil {

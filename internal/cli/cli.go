@@ -57,6 +57,9 @@ type Env struct {
 	// Await shows a spinner while poll is retried, until it reports true.
 	Await func(message string, poll func() (bool, error)) error
 
+	// Busy shows a spinner with message while work runs. Nil means no spinner.
+	Busy func(message string, work func() error) error
+
 	// OpenURL shows a URL in the user's browser. Tests swap in a recorder.
 	OpenURL func(url string) error
 
@@ -89,6 +92,16 @@ func record(env Env, root, repo, action, text, url string) {
 	if err := env.Log(path, entry); err != nil {
 		fmt.Fprintf(env.Stderr, "enzo: could not write the log: %v\n", err)
 	}
+}
+
+// busy runs work under a spinner when there is a terminal for one, and logs
+// the message either way so a long pause can be matched to what it was doing.
+func busy(env Env, root, repo, message string, work func() error) error {
+	record(env, root, repo, "working", message, "")
+	if env.Busy == nil || !env.Interactive {
+		return work()
+	}
+	return env.Busy(message, work)
 }
 
 // signedBody signs what enzo is about to post — an issue body, or a pull

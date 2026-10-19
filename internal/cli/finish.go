@@ -44,7 +44,12 @@ func Finish(ctx context.Context, env Env, args []string) error {
 		return fmt.Errorf("%q is not a branch enzo started; finish only merges branches named %s",
 			branch, branchName(login, 0, "")+"-<title>")
 	}
-	pr, err := client.PullRequestForBranch(ctx, slug, branch)
+	var pr *ghclient.PullRequest
+	err = busy(env, root, slug.String(), "finding the pull request on GitHub", func() error {
+		var err error
+		pr, err = client.PullRequestForBranch(ctx, slug, branch)
+		return err
+	})
 	if err != nil {
 		return err
 	}
@@ -74,16 +79,21 @@ func Finish(ctx context.Context, env Env, args []string) error {
 	// 2. Out of draft next: the merge state and the review decision are both
 	// reported differently for a draft, so reading them first would be
 	// reading the wrong pull request.
-	if pr.Draft {
-		if err := client.MarkReadyForReview(ctx, pr.NodeID); err != nil {
-			return err
+	var ready ghclient.Readiness
+	err = busy(env, root, slug.String(), fmt.Sprintf("checking PR #%d on GitHub", pr.Number), func() error {
+		if pr.Draft {
+			if err := client.MarkReadyForReview(ctx, pr.NodeID); err != nil {
+				return err
+			}
+			rr = append(rr, row{markPass, "undrafted", fmt.Sprintf("PR #%d", pr.Number)})
+		} else {
+			rr = append(rr, row{markPass, "undrafted", fmt.Sprintf("PR #%d was already out of draft", pr.Number)})
 		}
-		rr = append(rr, row{markPass, "undrafted", fmt.Sprintf("PR #%d", pr.Number)})
-	} else {
-		rr = append(rr, row{markPass, "undrafted", fmt.Sprintf("PR #%d was already out of draft", pr.Number)})
-	}
 
-	ready, err := client.Readiness(ctx, slug, pr.Number)
+		var err error
+		ready, err = client.Readiness(ctx, slug, pr.Number)
+		return err
+	})
 	if err != nil {
 		return err
 	}
@@ -109,7 +119,9 @@ func Finish(ctx context.Context, env Env, args []string) error {
 		}
 	}
 
-	if err := client.MergePullRequest(ctx, slug, pr.Number); err != nil {
+	if err := busy(env, root, slug.String(), fmt.Sprintf("merging PR #%d", pr.Number), func() error {
+		return client.MergePullRequest(ctx, slug, pr.Number)
+	}); err != nil {
 		return err
 	}
 	record(env, root, slug.String(), "merged",

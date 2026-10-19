@@ -377,9 +377,12 @@ type harness struct {
 
 	// logged collects the entries enzo recorded, and logPath the file it
 	// would have written them to.
-	logged  []eventlog.Entry
-	logPath string
-	logErr  error
+	logged []eventlog.Entry
+	// progress collects the "working" entries, which narrate pauses rather
+	// than record creations, so they stay out of logged.
+	progress []eventlog.Entry
+	logPath  string
+	logErr   error
 
 	// awaitCalls counts how many times enzo waited for GitHub to catch up,
 	// and awaitPolls how many polls that took in total.
@@ -522,6 +525,10 @@ func newHarness(t *testing.T, remote string) *harness {
 		},
 		Log: func(path string, e eventlog.Entry) error {
 			h.logPath = path
+			if e.Action == "working" {
+				h.progress = append(h.progress, e)
+				return h.logErr
+			}
 			h.logged = append(h.logged, e)
 			return h.logErr
 		},

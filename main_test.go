@@ -70,7 +70,8 @@ func logFileFor(t *testing.T) (string, []string) {
 	return path, []string{"ENZO_LOG=" + path}
 }
 
-// readLog returns the log's lines, or nil when it was never written.
+// readLog returns the log's record lines, or nil when it was never written.
+// The "working" lines that narrate pauses are left out.
 func readLog(t *testing.T, path string) []string {
 	t.Helper()
 	b, err := os.ReadFile(path)
@@ -84,7 +85,13 @@ func readLog(t *testing.T, path string) []string {
 	if trimmed == "" {
 		return nil
 	}
-	return strings.Split(trimmed, "\n")
+	var lines []string
+	for _, l := range strings.Split(trimmed, "\n") {
+		if !strings.Contains(l, " working ") {
+			lines = append(lines, l)
+		}
+	}
+	return lines
 }
 
 func testRepo(t *testing.T) string {

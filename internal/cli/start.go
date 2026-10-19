@@ -89,19 +89,28 @@ func runStart(ctx context.Context, env Env, root string, client ghclient.Client,
 
 	branch := branchName(login, issue.Number, issue.Title)
 
-	base, err := client.DefaultBranch(ctx, slug)
+	var (
+		base, baseRev string
+		baseErr       error
+		existing      *ghclient.PullRequest
+	)
+	err = busy(env, root, slug.String(), "checking GitHub for the base branch and PR", func() error {
+		var err error
+		if base, err = client.DefaultBranch(ctx, slug); err != nil {
+			return err
+		}
+		if existing, err = client.PullRequestForBranch(ctx, slug, branch); err != nil {
+			return err
+		}
+		// Resolved before the worktree is touched: it decides where a new
+		// branch starts, and a fetch that is going to fail should fail while
+		// you are still on the branch you were on.
+		baseRev, baseErr = resolveBase(root, base)
+		return nil
+	})
 	if err != nil {
 		return err
 	}
-	existing, err := client.PullRequestForBranch(ctx, slug, branch)
-	if err != nil {
-		return err
-	}
-
-	// Resolved before the worktree is touched: it decides where a new branch
-	// starts, and a fetch that is going to fail should fail while you are
-	// still on the branch you were on.
-	baseRev, baseErr := resolveBase(root, base)
 
 	createdBranch, err := checkout(root, branch, baseRev)
 	if err != nil {
@@ -117,27 +126,32 @@ func runStart(ctx context.Context, env Env, root string, client ghclient.Client,
 	// GitHub will not open a pull request between two identical branches, so a
 	// branch with nothing on it needs a commit before there is a PR to draft.
 	// See docs/decisions/0004-draft-pr-needs-a-commit.md.
-	if needsCommit(root, baseRev, baseErr) {
-		// The subject says what put it there, so an empty commit at the root
-		// of a branch is not a mystery months later. The issue it belongs to
-		// is in the branch name and in the pull request.
-		if err := gitrepo.CommitEmpty(root, version.Credit()); err != nil {
+	var pr ghclient.PullRequest
+	err = busy(env, root, slug.String(), "pushing the branch and drafting the PR", func() error {
+		if needsCommit(root, baseRev, baseErr) {
+			// The subject says what put it there, so an empty commit at the
+			// root of a branch is not a mystery months later. The issue it
+			// belongs to is in the branch name and in the pull request.
+			if err := gitrepo.CommitEmpty(root, version.Credit()); err != nil {
+				return err
+			}
+		}
+		if err := gitrepo.Push(root, "origin", branch); err != nil {
 			return err
 		}
-	}
-	if err := gitrepo.Push(root, "origin", branch); err != nil {
-		return err
-	}
 
-	pr, err := client.CreatePullRequest(ctx, slug, ghclient.NewPullRequest{
-		Title: issue.Title,
-		// The closing keyword is what keeps the PR and the issue linked, and
-		// what lets `enzo finish` close the issue by merging. It is signed the
-		// same way an issue body is.
-		Body:  signedBody(fmt.Sprintf("Closes #%d", issue.Number)),
-		Head:  branch,
-		Base:  base,
-		Draft: true,
+		var err error
+		pr, err = client.CreatePullRequest(ctx, slug, ghclient.NewPullRequest{
+			Title: issue.Title,
+			// The closing keyword is what keeps the PR and the issue linked,
+			// and what lets `enzo finish` close the issue by merging. It is
+			// signed the same way an issue body is.
+			Body:  signedBody(fmt.Sprintf("Closes #%d", issue.Number)),
+			Head:  branch,
+			Base:  base,
+			Draft: true,
+		})
+		return err
 	})
 	if err != nil {
 		return err
@@ -156,7 +170,12 @@ func startIssue(ctx context.Context, env Env, root string, client ghclient.Clien
 		return req.issue, nil
 	}
 	if req.number > 0 {
-		issue, err := client.Issue(ctx, slug, req.number)
+		var issue ghclient.Issue
+		err := busy(env, root, slug.String(), fmt.Sprintf("loading #%d from GitHub", req.number), func() error {
+			var err error
+			issue, err = client.Issue(ctx, slug, req.number)
+			return err
+		})
 		if err != nil {
 			return nil, err
 		}

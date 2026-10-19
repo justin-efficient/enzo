@@ -51,6 +51,7 @@ func main() {
 		AskDraft:   askDraft,
 		AskEdit:    askEdit,
 		Await:      await,
+		Busy:       busy,
 		OpenURL:    browser.Open,
 		Log:        eventlog.Append,
 	}
@@ -111,6 +112,25 @@ func await(message string, poll func() (bool, error)) error {
 		return nil
 	}
 	return w.Err()
+}
+
+// busy shows a spinner while work runs. ctrl+c abandons the wait; the work may
+// or may not have finished, so it reports as canceled.
+func busy(message string, work func() error) error {
+	p := tea.NewProgram(ui.NewBusy(message, ui.DefaultStyles()))
+	go func() { p.Send(ui.BusyDoneMsg{Err: work()}) }()
+	m, err := p.Run()
+	if err != nil {
+		return err
+	}
+	b, ok := m.(ui.Busy)
+	if !ok {
+		return nil
+	}
+	if b.Canceled() {
+		return cli.ErrCanceled
+	}
+	return b.Err()
 }
 
 // askDraft runs the new-issue form.

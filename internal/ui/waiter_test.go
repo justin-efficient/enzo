@@ -215,3 +215,24 @@ func TestWaiterDefaultTiming(t *testing.T) {
 		t.Errorf("timeout %v is too short for GitHub's listing lag", m.timeout)
 	}
 }
+
+func TestBusyQuitsWhenDone(t *testing.T) {
+	m := NewBusy("working", PlainStyles())
+	model, cmd := m.Update(BusyDoneMsg{Err: errPoll})
+	b := model.(Busy)
+	if !errors.Is(b.Err(), errPoll) {
+		t.Errorf("Err = %v, want %v", b.Err(), errPoll)
+	}
+	if _, ok := cmd().(tea.QuitMsg); !ok {
+		t.Error("should quit when the work is done")
+	}
+	if got := b.View().Content; got != "" {
+		t.Errorf("view after done = %q, want it cleared", got)
+	}
+}
+
+func TestBusyShowsMessage(t *testing.T) {
+	if got := NewBusy("creating it", PlainStyles()).View().Content; !strings.Contains(got, "creating it") {
+		t.Errorf("view = %q, want the message", got)
+	}
+}
